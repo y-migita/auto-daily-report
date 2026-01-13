@@ -8,6 +8,7 @@
     "opener:default",
     "macos-permissions:default",
     "screenshots:default",
+    "store:default",
     {
       "identifier": "shell:allow-open",
       "allow": [

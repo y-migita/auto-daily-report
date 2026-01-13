@@ -1,17 +1,23 @@
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::GenericImageView;
+use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+// Keychain constants
+const SERVICE: &str = "com.andeco.auto-daily-report";
+const ACCOUNT: &str = "GEMINI_API_KEY";
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -138,6 +144,155 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
         .ok_or("パスの変換に失敗しました".to_string())
 }
 
+// ==================== Keychain Commands ====================
+
+#[tauri::command]
+fn set_gemini_api_key(api_key: String) -> Result<(), String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    entry.set_password(&api_key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn has_gemini_api_key() -> Result<bool, String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(_) => Ok(true),
+        Err(KeyringError::NoEntry) => Ok(false),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn delete_gemini_api_key() -> Result<(), String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(KeyringError::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn get_gemini_api_key() -> Result<String, String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    entry.get_password().map_err(|e| e.to_string())
+}
+
+// ==================== Gemini API ====================
+
+#[derive(serde::Deserialize)]
+struct GeminiResponse {
+    candidates: Option<Vec<GeminiCandidate>>,
+    error: Option<GeminiError>,
+}
+
+#[derive(serde::Deserialize)]
+struct GeminiCandidate {
+    content: GeminiContent,
+}
+
+#[derive(serde::Deserialize)]
+struct GeminiContent {
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(serde::Deserialize)]
+struct GeminiPart {
+    text: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct GeminiError {
+    message: String,
+}
+
+/// 画像ファイルを読み込んでbase64エンコードする
+fn image_to_base64(path: &str) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| format!("ファイル読み込みエラー: {}", e))?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)
+        .map_err(|e| format!("ファイル読み込みエラー: {}", e))?;
+    Ok(STANDARD.encode(buffer))
+}
+
+/// Gemini APIを呼び出してスクリーンショットを解析する
+#[tauri::command]
+async fn analyze_screenshot(image_path: String, model: String, prompt: String) -> Result<String, String> {
+    // APIキーを取得
+    let api_key = get_gemini_api_key()?;
+
+    // 画像をbase64エンコード
+    let image_base64 = image_to_base64(&image_path)?;
+
+    // MIMEタイプを判定
+    let mime_type = if image_path.to_lowercase().ends_with(".png") {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+
+    // API URL
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model, api_key
+    );
+
+    // リクエストボディ
+    let body = serde_json::json!({
+        "contents": [{
+            "parts": [
+                { "text": prompt },
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": image_base64
+                    }
+                }
+            ]
+        }],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 1024
+        }
+    });
+
+    // APIを呼び出し
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("API呼び出しエラー: {}", e))?;
+
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|e| format!("レスポンス読み取りエラー: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("API エラー ({}): {}", status, response_text));
+    }
+
+    let gemini_response: GeminiResponse =
+        serde_json::from_str(&response_text).map_err(|e| format!("JSONパースエラー: {}", e))?;
+
+    // エラーチェック
+    if let Some(error) = gemini_response.error {
+        return Err(format!("Gemini エラー: {}", error.message));
+    }
+
+    // テキストを取得
+    let text = gemini_response
+        .candidates
+        .and_then(|c| c.into_iter().next())
+        .and_then(|c| c.content.parts.into_iter().next())
+        .and_then(|p| p.text)
+        .ok_or("Geminiからテキストが返されませんでした")?;
+
+    Ok(text)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -146,11 +301,16 @@ pub fn run() {
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_screenshots::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             open_screen_recording_settings,
             save_screenshot_to_pictures,
-            process_screenshot
+            process_screenshot,
+            set_gemini_api_key,
+            has_gemini_api_key,
+            delete_gemini_api_key,
+            analyze_screenshot
         ])
         .setup(|app| {
             // macOSでDockアイコンを非表示にしてメニューバーのみに表示
