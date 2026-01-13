@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
@@ -10,10 +11,13 @@ use image::GenericImageView;
 use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
-    Manager,
+    tray::{TrayIcon, TrayIconBuilder},
+    AppHandle, Manager, State,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+// トレーアイコンの状態管理
+struct TrayState(Mutex<Option<TrayIcon>>);
 
 // Keychain constants
 const SERVICE: &str = "com.y-migita.pasha-log";
@@ -118,7 +122,11 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
 
     // 元の一時ファイルを削除（失敗してもログを出力して続行）
     if let Err(e) = fs::remove_file(&validated_source) {
-        eprintln!("一時ファイルの削除に失敗しました: {} - {}", validated_source.display(), e);
+        eprintln!(
+            "一時ファイルの削除に失敗しました: {} - {}",
+            validated_source.display(),
+            e
+        );
     }
 
     // 新しいパスを返す
@@ -161,6 +169,39 @@ fn get_vercel_api_key() -> Result<String, String> {
     entry.get_password().map_err(|e| e.to_string())
 }
 
+// ==================== Tray Icon Commands ====================
+
+/// トレーアイコンのタイトルを更新（macOSではアイコンの横にテキスト表示）
+#[tauri::command]
+fn update_tray_title(title: String, tray_state: State<TrayState>) -> Result<(), String> {
+    let tray_guard = tray_state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(tray) = tray_guard.as_ref() {
+        tray.set_title(Some(&title)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// トレーアイコンのタイトルをクリア
+#[tauri::command]
+fn clear_tray_title(tray_state: State<TrayState>) -> Result<(), String> {
+    let tray_guard = tray_state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(tray) = tray_guard.as_ref() {
+        tray.set_title(None::<&str>).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// トレーアイコンのツールチップを更新
+#[tauri::command]
+fn update_tray_tooltip(tooltip: String, tray_state: State<TrayState>) -> Result<(), String> {
+    let tray_guard = tray_state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(tray) = tray_guard.as_ref() {
+        tray.set_tooltip(Some(&tooltip))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ==================== Vercel AI Gateway (OpenAI-compatible) ====================
 
 #[derive(serde::Deserialize)]
@@ -195,7 +236,11 @@ fn image_to_base64(path: &str) -> Result<String, String> {
 
 /// Vercel AI Gateway (OpenAI-compatible API)を呼び出してスクリーンショットを解析する
 #[tauri::command]
-async fn analyze_screenshot(image_path: String, model: String, prompt: String) -> Result<String, String> {
+async fn analyze_screenshot(
+    image_path: String,
+    model: String,
+    prompt: String,
+) -> Result<String, String> {
     // APIキーを取得
     let api_key = get_vercel_api_key()?;
 
@@ -297,8 +342,12 @@ pub fn run() {
             set_vercel_api_key,
             has_vercel_api_key,
             delete_vercel_api_key,
-            analyze_screenshot
+            analyze_screenshot,
+            update_tray_title,
+            clear_tray_title,
+            update_tray_tooltip
         ])
+        .manage(TrayState(Mutex::new(None)))
         .setup(|app| {
             // macOSでDockアイコンを非表示にしてメニューバーのみに表示
             #[cfg(target_os = "macos")]
@@ -312,7 +361,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show, &open_folder, &quit])?;
 
             // システムトレイを作成
-            TrayIconBuilder::new()
+            let tray_icon = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .icon_as_template(true)
                 .menu(&menu)
@@ -364,6 +413,12 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // トレーアイコンを状態に保存（後から更新できるように）
+            let tray_state = app.state::<TrayState>();
+            if let Ok(mut tray_guard) = tray_state.0.lock() {
+                *tray_guard = Some(tray_icon);
+            }
 
             Ok(())
         })

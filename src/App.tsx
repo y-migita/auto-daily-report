@@ -34,6 +34,31 @@ function App() {
   const autoCaptureTImerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
 
+  // トレーアイコン更新用関数
+  const updateTrayTitle = useCallback(async (title: string) => {
+    try {
+      await invoke("update_tray_title", { title });
+    } catch (error) {
+      console.error("Failed to update tray title:", error);
+    }
+  }, []);
+
+  const clearTrayTitle = useCallback(async () => {
+    try {
+      await invoke("clear_tray_title");
+    } catch (error) {
+      console.error("Failed to clear tray title:", error);
+    }
+  }, []);
+
+  const updateTrayTooltip = useCallback(async (tooltip: string) => {
+    try {
+      await invoke("update_tray_tooltip", { tooltip });
+    } catch (error) {
+      console.error("Failed to update tray tooltip:", error);
+    }
+  }, []);
+
   async function checkApiKey() {
     try {
       const has = await invoke<boolean>("has_vercel_api_key");
@@ -107,8 +132,10 @@ function App() {
       if (countdownTimerRef.current) {
         clearInterval(countdownTimerRef.current);
       }
+      // クリーンアップ時にトレーアイコンをリセット
+      clearTrayTitle();
     };
-  }, []);
+  }, [clearTrayTitle]);
 
   async function takeScreenshot() {
     setIsCapturing(true);
@@ -161,6 +188,9 @@ function App() {
   // 自動撮影用の内部関数（UIのisCapturingを更新しない）
   const takeScreenshotForAuto = useCallback(async () => {
     try {
+      // 撮影中のステータスをトレーアイコンに表示
+      await updateTrayTitle("撮影中");
+
       const hasPermission = await checkScreenRecordingPermission();
       if (!hasPermission) {
         setDebugInfo("自動撮影: 権限がありません。自動撮影を停止します。");
@@ -192,11 +222,14 @@ function App() {
       setDebugInfo(`自動撮影エラー: ${error}`);
       console.error("Auto capture failed:", error);
     }
-  }, []);
+  }, [updateTrayTitle]);
 
   // 自動撮影を開始
-  function startAutoCapture() {
+  async function startAutoCapture() {
     if (isAutoCapturing) return;
+
+    // ツールチップを更新
+    await updateTrayTooltip(`自動撮影中（${autoCaptureInterval}秒間隔）`);
 
     // 最初の撮影を即実行
     takeScreenshotForAuto();
@@ -213,9 +246,16 @@ function App() {
       setNextCaptureTime(new Date(Date.now() + autoCaptureInterval * 1000));
     }, autoCaptureInterval * 1000);
 
-    // カウントダウン更新用タイマー（1秒ごと）
+    // カウントダウン更新用タイマー（1秒ごと）- トレーアイコンも同時更新
     countdownTimerRef.current = window.setInterval(() => {
-      setNextCaptureTime((prev) => prev ? new Date(prev.getTime()) : null);
+      setNextCaptureTime((prev) => {
+        if (prev) {
+          const remaining = Math.max(0, Math.ceil((prev.getTime() - Date.now()) / 1000));
+          // 残り時間をトレーアイコンに表示
+          updateTrayTitle(`${remaining}秒`);
+        }
+        return prev ? new Date(prev.getTime()) : null;
+      });
     }, 1000);
 
     setIsAutoCapturing(true);
@@ -223,7 +263,7 @@ function App() {
   }
 
   // 自動撮影を停止
-  function stopAutoCapture() {
+  async function stopAutoCapture() {
     if (autoCaptureTImerRef.current) {
       clearInterval(autoCaptureTImerRef.current);
       autoCaptureTImerRef.current = null;
@@ -235,6 +275,10 @@ function App() {
     setIsAutoCapturing(false);
     setNextCaptureTime(null);
     setDebugInfo("自動撮影を停止しました");
+
+    // トレーアイコンをリセット
+    await clearTrayTitle();
+    await updateTrayTooltip("ぱしゃログ");
   }
 
   // 次回撮影までの残り秒数を計算
