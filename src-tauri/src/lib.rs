@@ -146,14 +146,14 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
     let date_dir = app_dir.join(&date_str);
     fs::create_dir_all(&date_dir).map_err(|e| format!("日付フォルダ作成エラー: {}", e))?;
 
-    // 時刻を取得 (HH-MM-SS)
-    let time_str = now.format("%H-%M-%S").to_string();
+    // 日時を取得 (YYYYMMDD_HHMMSS)
+    let datetime_str = now.format("%Y%m%d_%H%M%S").to_string();
 
     // 連番を探す（.jpg形式で）
     let mut counter = 1;
     let dest_path: PathBuf;
     loop {
-        let filename = format!("screenshot_{}_{:03}.jpg", time_str, counter);
+        let filename = format!("{}_{:03}.jpg", datetime_str, counter);
         let candidate = date_dir.join(&filename);
         if !candidate.exists() {
             dest_path = candidate;
