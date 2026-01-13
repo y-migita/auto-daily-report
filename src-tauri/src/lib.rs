@@ -12,7 +12,7 @@ use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIcon, TrayIconBuilder},
-    AppHandle, Manager, State,
+    Manager, State,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
