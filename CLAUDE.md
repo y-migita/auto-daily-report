@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-日報自動作成のためのTauriデスクトップアプリケーション。React + TypeScript（フロントエンド）とRust（バックエンド）で構成されている。
+**ぱしゃログ** - 日報自動作成のためのTauriデスクトップアプリケーション（macOS向け）。React + TypeScript（フロントエンド）とRust（バックエンド）で構成されている。
 
 ### 主な機能
 
-1. **スクリーンショット自動撮影**: 定期的にスクリーンショットを自動で撮影
-2. **スクリーンショット蓄積**: 撮影した画像をローカルに保存・管理
-3. **日報自動生成**: 蓄積されたスクリーンショットを解析し、日報を自動作成
+1. **スクリーンショット撮影**: 手動/自動でスクリーンショットを撮影
+2. **自動撮影機能**: 設定した間隔（10〜3600秒）で定期的に自動撮影
+3. **画像最適化**: FHD（1920px幅）にリサイズ、JPEG圧縮（品質80）で保存
+4. **AI分析**: Vercel AI Gateway経由で複数プロバイダー（Google, OpenAI, Anthropic, xAI）のVisionモデルで画像解析
+5. **メニューバーアプリ**: Dockに表示せず、メニューバーのトレーアイコンから操作
 
 ## 開発コマンド
 
@@ -27,16 +29,24 @@ bun run tauri build
 
 # 型チェック
 tsc
+
+# Lint・フォーマット（Biome）
+bun run lint
+bun run format
+bun run check
 ```
 
 ## アーキテクチャ
 
 ```
-src/           # Reactフロントエンド（TypeScript）
-src-tauri/     # Tauriバックエンド（Rust）
+src/                    # Reactフロントエンド（TypeScript）
+  ├── App.tsx           # メイン画面（スクリーンショット撮影・表示・自動撮影制御）
+  ├── Settings.tsx      # 設定画面（APIキー・モデル・プロンプト・撮影間隔）
+  └── main.tsx          # エントリーポイント
+src-tauri/              # Tauriバックエンド（Rust）
   └── src/
-      ├── lib.rs   # Tauriコマンド定義・プラグイン設定
-      └── main.rs  # エントリーポイント
+      ├── lib.rs        # Tauriコマンド定義・プラグイン設定・トレーアイコン
+      └── main.rs       # エントリーポイント
 ```
 
 ### フロントエンド⇔バックエンド通信
@@ -45,17 +55,50 @@ src-tauri/     # Tauriバックエンド（Rust）
 - Rustコマンドは`src-tauri/src/lib.rs`で`#[tauri::command]`マクロを使って定義
 - 新しいコマンドは`invoke_handler`に登録が必要
 
+### 主要Rustコマンド
+
+| コマンド | 説明 |
+|---------|------|
+| `process_screenshot` | スクリーンショットをリサイズ・JPEG圧縮して保存 |
+| `analyze_screenshot` | Vercel AI Gateway経由でAI分析 |
+| `set_vercel_api_key` | APIキーをKeychainに保存 |
+| `has_vercel_api_key` | APIキーの存在確認 |
+| `delete_vercel_api_key` | APIキーを削除 |
+| `update_tray_title` | トレーアイコンのタイトル更新 |
+| `clear_tray_title` | トレーアイコンのタイトルクリア |
+| `update_tray_tooltip` | トレーアイコンのツールチップ更新 |
+| `open_screen_recording_settings` | 画面収録の設定画面を開く |
+
 ### スクリーンショット保存
 
 - 保存先: `~/Pictures/auto-daily-report/YYYY-MM-DD/`
-- ファイル名形式: `screenshot_HH-MM-SS_NNN.png`（時刻 + 連番）
-- Rustコマンド `save_screenshot_to_pictures` で保存処理を実行
-- 依存クレート: `dirs`（Picturesフォルダ取得）、`chrono`（日時フォーマット）
+- ファイル名形式: `screenshot_HH-MM-SS_NNN.jpg`（時刻 + 連番、JPEG形式）
+- 画像処理: 1920px幅にリサイズ（Lanczos3）、JPEG品質80で圧縮
+- 依存クレート: `dirs`（Picturesフォルダ取得）、`chrono`（日時フォーマット）、`image`（画像処理）
+
+### セキュリティ
+
+- APIキーはmacOS Keychainに保存（`keyring`クレート使用）
+- パスのバリデーション:
+  - 一時ファイル: システム一時ディレクトリ、アプリキャッシュのみ許可
+  - 画像ファイル: `~/Pictures/auto-daily-report/`内のみ許可
+- シンボリックリンク攻撃対策として`canonicalize()`で正規化
+
+### Tauriプラグイン
+
+- `tauri-plugin-opener`: 外部リンクを開く
+- `tauri-plugin-shell`: シェルコマンド実行
+- `tauri-plugin-macos-permissions`: 画面収録権限の確認・要求
+- `tauri-plugin-dialog`: ダイアログ表示
+- `tauri-plugin-screenshots`: スクリーンショット撮影
+- `tauri-plugin-store`: 設定の永続化（settings.json）
 
 ### 注意点
 
 - Vite開発サーバーはポート1420固定（`vite.config.ts`で設定）
 - パッケージマネージャーはbunを使用
+- macOS専用アプリ（`ActivationPolicy::Accessory`でDock非表示）
+- 画面サイズは1280x720固定
 
 ## デザインルール
 
