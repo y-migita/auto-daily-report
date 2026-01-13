@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 位置情報の使用説明（macOS） -->
+    <key>NSLocationUsageDescription</key>
+    <string>日報に現在地情報を追加するために位置情報を使用します</string>
+
+    <!-- 位置情報の使用説明（macOS 10.15+） -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>日報に現在地情報を追加するために位置情報を使用します</string>
+
+    <!-- WiFi情報へのアクセス説明 -->
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>日報作成時にWiFi情報と位置情報を取得するために使用します</string>
+</dict>
+</plist>
