@@ -333,7 +333,7 @@ function App() {
             onClick={() => setActiveTab("capture")}
             className={`px-4 py-2 text-sm transition-colors ${
               activeTab === "capture"
-                ? "text-slate-700 border-b-2 border-slate-600 font-semibold"
+                ? "text-slate-700 border-b-2 border-slate-600 font-bold"
                 : "text-slate-500 hover:text-slate-700 font-medium"
             }`}
           >
@@ -344,7 +344,7 @@ function App() {
             onClick={() => setActiveTab("settings")}
             className={`px-4 py-2 text-sm transition-colors ${
               activeTab === "settings"
-                ? "text-slate-700 border-b-2 border-slate-600 font-semibold"
+                ? "text-slate-700 border-b-2 border-slate-600 font-bold"
                 : "text-slate-500 hover:text-slate-700 font-medium"
             }`}
           >
@@ -392,7 +392,7 @@ function App() {
                 type="button"
                 onClick={takeScreenshot}
                 disabled={isCapturing || isAutoCapturing}
-                className="w-full px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isCapturing ? "撮影中..." : "スクリーンショットを撮る"}
               </button>
@@ -400,7 +400,7 @@ function App() {
               {/* 自動撮影コントロール */}
               <div className="p-3 border border-slate-200 rounded-sm bg-white">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-slate-700">自動撮影</span>
+                  <span className="text-sm font-bold text-slate-700">自動撮影</span>
                   <button
                     type="button"
                     onClick={isAutoCapturing ? stopAutoCapture : startAutoCapture}
@@ -408,7 +408,7 @@ function App() {
                     className={`px-3 py-1.5 text-sm border rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       isAutoCapturing
                         ? "border-slate-300 bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 font-medium"
-                        : "border-slate-400 bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-semibold"
+                        : "border-slate-400 bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-bold"
                     }`}
                   >
                     {isAutoCapturing ? "停止" : "開始"}
@@ -449,7 +449,7 @@ function App() {
               {/* AI分析結果 */}
               {analysisResult && (
                 <div className="p-3 border border-slate-200 rounded-sm bg-white">
-                  <h3 className="text-sm font-semibold text-slate-700 mb-2">
+                  <h3 className="text-sm font-bold text-slate-700 mb-2">
                     AI分析結果
                   </h3>
                   <p className="text-sm text-slate-600 whitespace-pre-wrap">
