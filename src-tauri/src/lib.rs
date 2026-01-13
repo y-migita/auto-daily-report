@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView};
 use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -16,7 +16,7 @@ use tauri::{
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 // Keychain constants
-const SERVICE: &str = "com.andeco.auto-daily-report";
+const SERVICE: &str = "com.y-migita.pasha-log";
 const ACCOUNT: &str = "VERCEL_API_KEY";
 
 #[tauri::command]
@@ -33,8 +33,34 @@ fn open_screen_recording_settings() -> Result<(), String> {
     Ok(())
 }
 
+/// ソースパスが一時ディレクトリ内かどうかを検証する
+fn validate_temp_path(source_path: &str) -> Result<PathBuf, String> {
+    let source = PathBuf::from(source_path);
+
+    // パスの存在確認
+    if !source.exists() {
+        return Err("ソースファイルが存在しません".to_string());
+    }
+
+    // 正規化してシンボリックリンク攻撃を防ぐ
+    let canonical = source
+        .canonicalize()
+        .map_err(|e| format!("パスの正規化に失敗: {}", e))?;
+
+    // 一時ディレクトリ内のファイルのみ許可
+    let temp_dir = std::env::temp_dir();
+    if !canonical.starts_with(&temp_dir) {
+        return Err("許可されていないパスです".to_string());
+    }
+
+    Ok(canonical)
+}
+
 #[tauri::command]
 fn save_screenshot_to_pictures(source_path: &str) -> Result<String, String> {
+    // パスのバリデーション
+    let validated_source = validate_temp_path(source_path)?;
+
     // Picturesフォルダのパスを取得
     let pictures_dir = dirs::picture_dir().ok_or("Picturesフォルダが見つかりません")?;
 
@@ -68,7 +94,7 @@ fn save_screenshot_to_pictures(source_path: &str) -> Result<String, String> {
     }
 
     // ファイルをコピー
-    fs::copy(source_path, &dest_path).map_err(|e| format!("ファイルコピーエラー: {}", e))?;
+    fs::copy(&validated_source, &dest_path).map_err(|e| format!("ファイルコピーエラー: {}", e))?;
 
     // 新しいパスを返す
     dest_path
@@ -81,6 +107,9 @@ fn save_screenshot_to_pictures(source_path: &str) -> Result<String, String> {
 /// source_path: screenshotsプラグインから取得した一時画像ファイルのパス
 #[tauri::command]
 fn process_screenshot(source_path: &str) -> Result<String, String> {
+    // パスのバリデーション
+    let validated_source = validate_temp_path(source_path)?;
+
     // Picturesフォルダのパスを取得
     let pictures_dir = dirs::picture_dir().ok_or("Picturesフォルダが見つかりません")?;
 
@@ -114,7 +143,7 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
     }
 
     // 画像を読み込み
-    let img = image::open(source_path).map_err(|e| format!("画像読み込みエラー: {}", e))?;
+    let img = image::open(&validated_source).map_err(|e| format!("画像読み込みエラー: {}", e))?;
 
     // FHD（1920幅）にリサイズ（アスペクト比維持）
     let (width, height) = img.dimensions();
@@ -128,14 +157,14 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
 
     // JPEG品質80で保存
     let file = File::create(&dest_path).map_err(|e| format!("ファイル作成エラー: {}", e))?;
-    let writer = BufWriter::new(file);
-    let mut encoder = JpegEncoder::new_with_quality(writer, 80);
-    encoder
-        .encode_image(&resized)
+    let mut writer = BufWriter::new(file);
+    let encoder = JpegEncoder::new_with_quality(&mut writer, 80);
+    resized
+        .write_with_encoder(encoder)
         .map_err(|e| format!("JPEG保存エラー: {}", e))?;
 
     // 元の一時ファイルを削除（エラーは無視）
-    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(&validated_source);
 
     // 新しいパスを返す
     dest_path
@@ -268,7 +297,15 @@ async fn analyze_screenshot(image_path: String, model: String, prompt: String) -
         .map_err(|e| format!("レスポンス読み取りエラー: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("API エラー ({}): {}", status, response_text));
+        // ステータスコードのみを返し、レスポンスボディの詳細は含めない（機密情報漏洩防止）
+        let error_hint = match status.as_u16() {
+            401 => "認証エラー。APIキーを確認してください",
+            403 => "アクセス拒否。APIキーの権限を確認してください",
+            429 => "レート制限。しばらく待ってから再試行してください",
+            500..=599 => "サーバーエラー。しばらく待ってから再試行してください",
+            _ => "APIリクエストに失敗しました",
+        };
+        return Err(format!("API エラー ({}): {}", status.as_u16(), error_hint));
     }
 
     let openai_response: OpenAIResponse =
