@@ -1,17 +1,23 @@
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::GenericImageView;
+use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+// Keychain constants
+const SERVICE: &str = "com.andeco.auto-daily-report";
+const ACCOUNT: &str = "VERCEL_API_KEY";
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -138,6 +144,151 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
         .ok_or("パスの変換に失敗しました".to_string())
 }
 
+// ==================== Keychain Commands ====================
+
+#[tauri::command]
+fn set_vercel_api_key(api_key: String) -> Result<(), String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    entry.set_password(&api_key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn has_vercel_api_key() -> Result<bool, String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(_) => Ok(true),
+        Err(KeyringError::NoEntry) => Ok(false),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn delete_vercel_api_key() -> Result<(), String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(KeyringError::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn get_vercel_api_key() -> Result<String, String> {
+    let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
+    entry.get_password().map_err(|e| e.to_string())
+}
+
+// ==================== Vercel AI Gateway (OpenAI-compatible) ====================
+
+#[derive(serde::Deserialize)]
+struct OpenAIResponse {
+    choices: Option<Vec<OpenAIChoice>>,
+    error: Option<OpenAIError>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenAIChoice {
+    message: OpenAIMessage,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenAIMessage {
+    content: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenAIError {
+    message: String,
+}
+
+/// 画像ファイルを読み込んでbase64エンコードする
+fn image_to_base64(path: &str) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| format!("ファイル読み込みエラー: {}", e))?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)
+        .map_err(|e| format!("ファイル読み込みエラー: {}", e))?;
+    Ok(STANDARD.encode(buffer))
+}
+
+/// Vercel AI Gateway (OpenAI-compatible API)を呼び出してスクリーンショットを解析する
+#[tauri::command]
+async fn analyze_screenshot(image_path: String, model: String, prompt: String) -> Result<String, String> {
+    // APIキーを取得
+    let api_key = get_vercel_api_key()?;
+
+    // 画像をbase64エンコード
+    let image_base64 = image_to_base64(&image_path)?;
+
+    // MIMEタイプを判定
+    let mime_type = if image_path.to_lowercase().ends_with(".png") {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+
+    // Vercel AI Gateway URL (OpenAI-compatible)
+    let url = "https://ai-gateway.vercel.sh/v1/chat/completions";
+
+    // OpenAI形式のリクエストボディ（vision対応）
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:{};base64,{}", mime_type, image_base64)
+                    }
+                }
+            ]
+        }],
+        "max_tokens": 1024,
+        "temperature": 0.2
+    });
+
+    // APIを呼び出し
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("API呼び出しエラー: {}", e))?;
+
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|e| format!("レスポンス読み取りエラー: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("API エラー ({}): {}", status, response_text));
+    }
+
+    let openai_response: OpenAIResponse =
+        serde_json::from_str(&response_text).map_err(|e| format!("JSONパースエラー: {}", e))?;
+
+    // エラーチェック
+    if let Some(error) = openai_response.error {
+        return Err(format!("API エラー: {}", error.message));
+    }
+
+    // テキストを取得
+    let text = openai_response
+        .choices
+        .and_then(|c| c.into_iter().next())
+        .and_then(|c| c.message.content)
+        .ok_or("AIからテキストが返されませんでした")?;
+
+    Ok(text)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -146,11 +297,16 @@ pub fn run() {
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_screenshots::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             open_screen_recording_settings,
             save_screenshot_to_pictures,
-            process_screenshot
+            process_screenshot,
+            set_vercel_api_key,
+            has_vercel_api_key,
+            delete_vercel_api_key,
+            analyze_screenshot
         ])
         .setup(|app| {
             // macOSでDockアイコンを非表示にしてメニューバーのみに表示
