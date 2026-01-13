@@ -37,7 +37,10 @@ fn open_screen_recording_settings() -> Result<(), String> {
     Ok(())
 }
 
-/// ソースパスが一時ディレクトリ内かどうかを検証する
+/// ソースパスが許可されたディレクトリ内かどうかを検証する
+/// 許可されるディレクトリ:
+/// - システムの一時ディレクトリ (std::env::temp_dir)
+/// - アプリのキャッシュディレクトリ (tauri-plugin-screenshots が使用する可能性あり)
 fn validate_temp_path(source_path: &str) -> Result<PathBuf, String> {
     let source = PathBuf::from(source_path);
 
@@ -51,14 +54,37 @@ fn validate_temp_path(source_path: &str) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("パスの正規化に失敗: {}", e))?;
 
-    // 一時ディレクトリ内のファイルのみ許可
-    // temp_dirも正規化してシンボリックリンク（例: macOSの/var -> /private/var）を解決
+    // 許可されるディレクトリのリストを構築
+    let mut allowed_dirs: Vec<PathBuf> = Vec::new();
+
+    // 1. システムの一時ディレクトリ
     let temp_dir = std::env::temp_dir();
-    let canonical_temp_dir = temp_dir
-        .canonicalize()
-        .unwrap_or(temp_dir);
-    if !canonical.starts_with(&canonical_temp_dir) {
-        return Err("許可されていないパスです".to_string());
+    let canonical_temp_dir = temp_dir.canonicalize().unwrap_or(temp_dir);
+    allowed_dirs.push(canonical_temp_dir);
+
+    // 2. アプリのキャッシュディレクトリ (macOSでは ~/Library/Caches/com.y-migita.pasha-log)
+    if let Some(cache_dir) = dirs::cache_dir() {
+        let app_cache = cache_dir.join("com.y-migita.pasha-log");
+        if let Ok(canonical_cache) = app_cache.canonicalize() {
+            allowed_dirs.push(canonical_cache);
+        }
+    }
+
+    // 3. macOSのApplication Supportディレクトリ内のキャッシュ
+    if let Some(data_dir) = dirs::data_dir() {
+        let app_data = data_dir.join("com.y-migita.pasha-log");
+        if let Ok(canonical_data) = app_data.canonicalize() {
+            allowed_dirs.push(canonical_data);
+        }
+    }
+
+    // いずれかの許可されたディレクトリ内にあるかチェック
+    let is_allowed = allowed_dirs.iter().any(|dir| canonical.starts_with(dir));
+    if !is_allowed {
+        return Err(format!(
+            "許可されていないパスです: {}",
+            canonical.display()
+        ));
     }
 
     Ok(canonical)
