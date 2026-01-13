@@ -5,6 +5,7 @@ import {
   checkScreenRecordingPermission,
   requestScreenRecordingPermission,
 } from "tauri-plugin-macos-permissions-api";
+import { Badge } from "./components/Badge";
 
 // Vercel AI Gateway uses provider/model format
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
@@ -196,14 +197,14 @@ function Settings({ onSettingsChange }: SettingsProps) {
             </p>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-sm text-slate-600">ステータス:</span>
-              <span
-                className={`px-2 py-0.5 text-xs rounded-sm border ${
+              <Badge
+                variant={
                   permissionStatus === "granted"
-                    ? "border-slate-400 bg-slate-100 text-slate-700"
+                    ? "default"
                     : permissionStatus === "denied"
-                      ? "border-slate-400 bg-slate-200 text-slate-700"
-                      : "border-slate-300 bg-slate-50 text-slate-600"
-                }`}
+                      ? "warning"
+                      : "muted"
+                }
               >
                 {permissionStatus === "granted"
                   ? "許可済み"
@@ -212,7 +213,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
                     : permissionStatus === "checking"
                       ? "確認中"
                       : "不明"}
-              </span>
+              </Badge>
             </div>
             <div className="flex gap-2 flex-wrap">
               <button
