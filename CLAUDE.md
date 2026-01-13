@@ -28,7 +28,7 @@ bun run build
 bun run tauri build
 
 # 型チェック
-tsc
+bun run typecheck
 
 # Lint・フォーマット（Biome）
 bun run lint
