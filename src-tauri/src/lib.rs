@@ -60,6 +60,32 @@ fn validate_temp_path(source_path: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+/// 画像パスがアプリのPicturesフォルダ内かどうかを検証する
+fn validate_pictures_path(image_path: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(image_path);
+
+    // パスの存在確認
+    if !path.exists() {
+        return Err("画像ファイルが存在しません".to_string());
+    }
+
+    // 正規化してシンボリックリンク攻撃を防ぐ
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("パスの正規化に失敗: {}", e))?;
+
+    // Picturesフォルダのパスを取得
+    let pictures_dir = dirs::picture_dir().ok_or("Picturesフォルダが見つかりません")?;
+    let app_dir = pictures_dir.join("auto-daily-report");
+
+    // アプリのPicturesフォルダ内のファイルのみ許可
+    if !canonical.starts_with(&app_dir) {
+        return Err("許可されていない画像パスです".to_string());
+    }
+
+    Ok(canonical)
+}
+
 /// スクリーンショット画像をリサイズ・JPEG圧縮してPicturesフォルダに保存
 /// source_path: screenshotsプラグインから取得した一時画像ファイルのパス
 #[tauri::command]
@@ -241,11 +267,14 @@ async fn analyze_screenshot(
     model: String,
     prompt: String,
 ) -> Result<String, String> {
+    // パスのバリデーション（Picturesフォルダ内のみ許可）
+    let validated_path = validate_pictures_path(&image_path)?;
+
     // APIキーを取得
     let api_key = get_vercel_api_key()?;
 
-    // 画像をbase64エンコード
-    let image_base64 = image_to_base64(&image_path)?;
+    // 画像をbase64エンコード（検証済みパスを使用）
+    let image_base64 = image_to_base64(validated_path.to_str().ok_or("パス変換エラー")?)?;
 
     // MIMEタイプを判定
     let mime_type = if image_path.to_lowercase().ends_with(".png") {

@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "dialog:default",
     "macos-permissions:default",
     "screenshots:default",
     "store:default",
@@ -13,7 +14,7 @@
       "identifier": "shell:allow-open",
       "allow": [
         { "path": "^x-apple\\.systempreferences:.*$" },
-        { "path": "^https?://.*$" }
+        { "path": "^https://vercel\\.com/.*$" }
       ]
     }
   ]
