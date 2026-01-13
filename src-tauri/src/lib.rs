@@ -52,8 +52,12 @@ fn validate_temp_path(source_path: &str) -> Result<PathBuf, String> {
         .map_err(|e| format!("パスの正規化に失敗: {}", e))?;
 
     // 一時ディレクトリ内のファイルのみ許可
+    // temp_dirも正規化してシンボリックリンク（例: macOSの/var -> /private/var）を解決
     let temp_dir = std::env::temp_dir();
-    if !canonical.starts_with(&temp_dir) {
+    let canonical_temp_dir = temp_dir
+        .canonicalize()
+        .unwrap_or(temp_dir);
+    if !canonical.starts_with(&canonical_temp_dir) {
         return Err("許可されていないパスです".to_string());
     }
 
@@ -75,11 +79,15 @@ fn validate_pictures_path(image_path: &str) -> Result<PathBuf, String> {
         .map_err(|e| format!("パスの正規化に失敗: {}", e))?;
 
     // Picturesフォルダのパスを取得
+    // app_dirも正規化してシンボリックリンクを解決（存在する場合のみ）
     let pictures_dir = dirs::picture_dir().ok_or("Picturesフォルダが見つかりません")?;
     let app_dir = pictures_dir.join("auto-daily-report");
+    let canonical_app_dir = app_dir
+        .canonicalize()
+        .unwrap_or(app_dir);
 
     // アプリのPicturesフォルダ内のファイルのみ許可
-    if !canonical.starts_with(&app_dir) {
+    if !canonical.starts_with(&canonical_app_dir) {
         return Err("許可されていない画像パスです".to_string());
     }
 
