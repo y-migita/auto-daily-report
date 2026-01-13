@@ -16,6 +16,12 @@ use tauri::{
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
+// macOS CoreWLAN/CoreLocation
+#[cfg(target_os = "macos")]
+use objc2_core_location::{CLAuthorizationStatus, CLLocationManager};
+#[cfg(target_os = "macos")]
+use objc2_core_wlan::CWWiFiClient;
+
 // トレーアイコンの状態管理
 struct TrayState(Mutex<Option<TrayIcon>>);
 
@@ -262,6 +268,102 @@ fn update_tray_tooltip(tooltip: String, tray_state: State<TrayState>) -> Result<
     Ok(())
 }
 
+// ==================== Context Info (WiFi/Location) ====================
+
+/// コンテキスト情報（WiFi SSID、位置情報）
+#[derive(Default, serde::Serialize)]
+struct ContextInfo {
+    wifi_ssid: Option<String>,
+    location: Option<LocationInfo>,
+}
+
+#[derive(serde::Serialize)]
+struct LocationInfo {
+    latitude: f64,
+    longitude: f64,
+}
+
+/// 現在接続中のWiFi SSIDを取得（macOS）
+#[cfg(target_os = "macos")]
+fn get_wifi_ssid() -> Option<String> {
+    unsafe {
+        // CWWiFiClient.shared().interface()?.ssid()
+        let client = CWWiFiClient::sharedWiFiClient();
+        let interface = client.interface()?;
+        let ssid = interface.ssid()?;
+        Some(ssid.to_string())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn get_wifi_ssid() -> Option<String> {
+    None
+}
+
+/// 現在の位置情報を取得（macOS）
+/// CoreLocationは非同期のデリゲートパターンが必要なため、
+/// 同期的に取得するにはlocationServicesEnabledの確認と最後の既知位置を使用
+#[cfg(target_os = "macos")]
+fn get_location() -> Option<LocationInfo> {
+    unsafe {
+        // 位置情報サービスが有効か確認
+        if !CLLocationManager::locationServicesEnabled() {
+            return None;
+        }
+
+        let manager = CLLocationManager::new();
+
+        // 認可状態を確認（macOS 11+）
+        let status = manager.authorizationStatus();
+        match status {
+            CLAuthorizationStatus::Authorized | CLAuthorizationStatus::AuthorizedAlways => {
+                // 最後の既知位置を取得（利用可能な場合）
+                if let Some(location) = manager.location() {
+                    let coordinate = location.coordinate();
+                    return Some(LocationInfo {
+                        latitude: coordinate.latitude,
+                        longitude: coordinate.longitude,
+                    });
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn get_location() -> Option<LocationInfo> {
+    None
+}
+
+/// AI分析用のコンテキスト情報を収集
+fn collect_context_info() -> ContextInfo {
+    ContextInfo {
+        wifi_ssid: get_wifi_ssid(),
+        location: get_location(),
+    }
+}
+
+/// コンテキスト情報をテキストに変換（AIプロンプト用）
+fn format_context_info(info: &ContextInfo) -> String {
+    let mut parts = Vec::new();
+
+    if let Some(ref ssid) = info.wifi_ssid {
+        parts.push(format!("接続WiFi: {}", ssid));
+    }
+
+    if let Some(ref loc) = info.location {
+        parts.push(format!("位置: 緯度{:.6}, 経度{:.6}", loc.latitude, loc.longitude));
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n【追加コンテキスト】\n{}", parts.join("\n"))
+    }
+}
+
 // ==================== Vercel AI Gateway (OpenAI-compatible) ====================
 
 #[derive(serde::Deserialize)]
@@ -307,6 +409,13 @@ async fn analyze_screenshot(
     // APIキーを取得
     let api_key = get_vercel_api_key()?;
 
+    // コンテキスト情報を収集（WiFi SSID、位置情報）
+    let context_info = collect_context_info();
+    let context_text = format_context_info(&context_info);
+
+    // プロンプトにコンテキスト情報を追加
+    let full_prompt = format!("{}{}", prompt, context_text);
+
     // 画像をbase64エンコード（検証済みパスを使用）
     let image_base64 = image_to_base64(validated_path.to_str().ok_or("パス変換エラー")?)?;
 
@@ -328,7 +437,7 @@ async fn analyze_screenshot(
             "content": [
                 {
                     "type": "text",
-                    "text": prompt
+                    "text": full_prompt
                 },
                 {
                     "type": "image_url",
