@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "@fontsource/noto-sans-jp";
+import "@fontsource/zen-maru-gothic";
 import App from "./App";
 import "./App.css";
 
