@@ -327,10 +327,10 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-800 p-4">
-      <div className="max-w-2xl">
+    <main className="h-screen bg-slate-50 text-slate-800 p-4 overflow-hidden">
+      <div className="h-full flex flex-col">
         {/* タブナビゲーション */}
-        <div className="flex gap-1 mb-4 border-b border-slate-200">
+        <div className="flex gap-1 mb-4 border-b border-slate-200 flex-shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab("screenshot")}
@@ -356,11 +356,12 @@ function App() {
         </div>
 
         {activeTab === "screenshot" ? (
-          <>
-            {/* 権限ステータス */}
-            <div className="mb-3 p-3 border border-slate-200 rounded-sm bg-white">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+          <div className="flex-1 flex gap-4 min-h-0">
+            {/* 左カラム: コントロール */}
+            <div className="w-80 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
+              {/* 権限ステータス */}
+              <div className="p-3 border border-slate-200 rounded-sm bg-white">
+                <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm text-slate-600">権限:</span>
                   <span
                     className={`px-2 py-0.5 text-xs rounded-sm border ${
@@ -385,7 +386,7 @@ function App() {
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={checkPermission}
@@ -411,33 +412,45 @@ function App() {
                   </button>
                 </div>
               </div>
-            </div>
 
-            {/* デバッグ情報 */}
-            {debugInfo && (
-              <div className="mb-3 p-2 border border-slate-200 rounded-sm bg-slate-50">
-                <span className="text-xs text-slate-500 font-mono break-all">
-                  {debugInfo}
-                </span>
-              </div>
-            )}
+              {/* デバッグ情報 */}
+              {debugInfo && (
+                <div className="p-2 border border-slate-200 rounded-sm bg-slate-50">
+                  <span className="text-xs text-slate-500 font-mono break-all">
+                    {debugInfo}
+                  </span>
+                </div>
+              )}
 
-            {/* キャプチャボタン */}
-            <button
-              type="button"
-              onClick={takeScreenshot}
-              disabled={isCapturing || isAutoCapturing}
-              className="w-full mb-3 px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isCapturing ? "撮影中..." : "スクリーンショットを撮る"}
-            </button>
+              {/* キャプチャボタン */}
+              <button
+                type="button"
+                onClick={takeScreenshot}
+                disabled={isCapturing || isAutoCapturing}
+                className="w-full px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isCapturing ? "撮影中..." : "スクリーンショットを撮る"}
+              </button>
 
-            {/* 自動撮影コントロール */}
-            <div className="mb-3 p-3 border border-slate-200 rounded-sm bg-white">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              {/* 自動撮影コントロール */}
+              <div className="p-3 border border-slate-200 rounded-sm bg-white">
+                <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-slate-700">自動撮影</span>
-                  {isAutoCapturing && (
+                  <button
+                    type="button"
+                    onClick={isAutoCapturing ? stopAutoCapture : startAutoCapture}
+                    disabled={permissionStatus !== "granted"}
+                    className={`px-3 py-1.5 text-sm border rounded-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      isAutoCapturing
+                        ? "border-slate-300 bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700"
+                        : "border-slate-400 bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white"
+                    }`}
+                  >
+                    {isAutoCapturing ? "停止" : "開始"}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isAutoCapturing ? (
                     <>
                       <span className="px-2 py-0.5 text-xs rounded-sm border border-slate-400 bg-slate-100 text-slate-700">
                         {captureCount}枚撮影済み
@@ -446,73 +459,68 @@ function App() {
                         次回まで {getRemainingSeconds()}秒
                       </span>
                     </>
-                  )}
-                  {!isAutoCapturing && (
+                  ) : (
                     <span className="text-xs text-slate-500">
                       {autoCaptureInterval}秒間隔
                     </span>
                   )}
                 </div>
+              </div>
+
+              {/* AI分析ボタン */}
+              {screenshotPath && (
                 <button
                   type="button"
-                  onClick={isAutoCapturing ? stopAutoCapture : startAutoCapture}
-                  disabled={permissionStatus !== "granted"}
-                  className={`px-3 py-1.5 text-sm border rounded-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isAutoCapturing
-                      ? "border-slate-300 bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700"
-                      : "border-slate-400 bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white"
-                  }`}
+                  onClick={analyzeWithAI}
+                  disabled={isAnalyzing || !hasApiKey}
+                  className="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {isAutoCapturing ? "停止" : "開始"}
+                  {isAnalyzing
+                    ? "分析中..."
+                    : !hasApiKey
+                      ? "APIキーを設定してください"
+                      : "AIで分析する"}
                 </button>
-              </div>
+              )}
+
+              {/* AI分析結果 */}
+              {analysisResult && (
+                <div className="p-3 border border-slate-200 rounded-sm bg-white">
+                  <h3 className="text-sm font-medium text-slate-700 mb-2">
+                    AI分析結果
+                  </h3>
+                  <p className="text-sm text-slate-600 whitespace-pre-wrap">
+                    {analysisResult}
+                  </p>
+                </div>
+              )}
             </div>
 
-            {/* AI分析ボタン */}
-            {screenshotPath && (
-              <button
-                type="button"
-                onClick={analyzeWithAI}
-                disabled={isAnalyzing || !hasApiKey}
-                className="w-full mb-3 px-4 py-2.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isAnalyzing
-                  ? "分析中..."
-                  : !hasApiKey
-                    ? "APIキーを設定してください"
-                    : "AIで分析する"}
-              </button>
-            )}
-
-            {/* AI分析結果 */}
-            {analysisResult && (
-              <div className="mb-3 p-3 border border-slate-200 rounded-sm bg-white">
-                <h3 className="text-sm font-medium text-slate-700 mb-2">
-                  AI分析結果
-                </h3>
-                <p className="text-sm text-slate-600 whitespace-pre-wrap">
-                  {analysisResult}
-                </p>
-              </div>
-            )}
-
-            {/* スクリーンショット表示 */}
-            {screenshotSrc && (
-              <div className="border border-slate-200 rounded-sm bg-white p-2">
-                <img
-                  src={screenshotSrc}
-                  alt="スクリーンショット"
-                  className="w-full h-auto rounded-sm"
-                />
-              </div>
-            )}
-          </>
+            {/* 右カラム: スクリーンショット表示 */}
+            <div className="flex-1 min-w-0 overflow-hidden">
+              {screenshotSrc ? (
+                <div className="h-full border border-slate-200 rounded-sm bg-white p-2 overflow-auto">
+                  <img
+                    src={screenshotSrc}
+                    alt="スクリーンショット"
+                    className="w-full h-auto rounded-sm"
+                  />
+                </div>
+              ) : (
+                <div className="h-full border border-slate-200 rounded-sm bg-white flex items-center justify-center">
+                  <span className="text-sm text-slate-400">スクリーンショットがここに表示されます</span>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
-          <Settings
-            onSettingsChange={() => {
-              checkApiKey();
-            }}
-          />
+          <div className="flex-1 overflow-y-auto">
+            <Settings
+              onSettingsChange={() => {
+                checkApiKey();
+              }}
+            />
+          </div>
         )}
       </div>
     </main>

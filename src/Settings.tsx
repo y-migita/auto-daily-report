@@ -132,11 +132,11 @@ function Settings({ onSettingsChange }: SettingsProps) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="h-full">
       {/* メッセージ表示 */}
       {message && (
         <div
-          className={`p-2 text-sm rounded-sm border ${
+          className={`mb-4 p-2 text-sm rounded-sm border ${
             message.type === "success"
               ? "border-slate-400 bg-slate-100 text-slate-700"
               : "border-slate-400 bg-slate-200 text-slate-700"
@@ -146,130 +146,138 @@ function Settings({ onSettingsChange }: SettingsProps) {
         </div>
       )}
 
-      {/* APIキー設定 */}
-      <div className="p-3 border border-slate-200 rounded-sm bg-white">
-        <h2 className="text-sm font-medium text-slate-700 mb-2">
-          Vercel AI Gateway APIキー
-        </h2>
-        <p className="text-xs text-slate-500 mb-2">
-          APIキーはmacOS Keychainに安全に保存されます。
-          <a
-            href="https://vercel.com/ai-gateway"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-slate-600 underline ml-1"
-          >
-            APIキーを取得
-          </a>
-        </p>
+      <div className="grid grid-cols-2 gap-4">
+        {/* 左カラム */}
+        <div className="space-y-4">
+          {/* APIキー設定 */}
+          <div className="p-3 border border-slate-200 rounded-sm bg-white">
+            <h2 className="text-sm font-medium text-slate-700 mb-2">
+              Vercel AI Gateway APIキー
+            </h2>
+            <p className="text-xs text-slate-500 mb-2">
+              APIキーはmacOS Keychainに安全に保存されます。
+              <a
+                href="https://vercel.com/ai-gateway"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-600 underline ml-1"
+              >
+                APIキーを取得
+              </a>
+            </p>
 
-        {hasApiKey ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-600">APIキー: 設定済み</span>
-            <button
-              type="button"
-              onClick={handleDeleteApiKey}
-              disabled={isSaving}
-              className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors disabled:opacity-50"
-            >
-              削除
-            </button>
+            {hasApiKey ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600">APIキー: 設定済み</span>
+                <button
+                  type="button"
+                  onClick={handleDeleteApiKey}
+                  disabled={isSaving}
+                  className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors disabled:opacity-50"
+                >
+                  削除
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="APIキーを入力"
+                  className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveApiKey}
+                  disabled={isSaving}
+                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium transition-colors disabled:opacity-50"
+                >
+                  保存
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="APIキーを入力"
-              className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
-            />
-            <button
-              type="button"
-              onClick={handleSaveApiKey}
-              disabled={isSaving}
-              className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium transition-colors disabled:opacity-50"
-            >
-              保存
-            </button>
-          </div>
-        )}
-      </div>
 
-      {/* モデル設定 */}
-      <div className="p-3 border border-slate-200 rounded-sm bg-white">
-        <h2 className="text-sm font-medium text-slate-700 mb-2">モデル</h2>
-        <p className="text-xs text-slate-500 mb-2">
-          Vision対応モデルを選択してください
-        </p>
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
-        >
-          {Object.entries(modelsByProvider).map(([provider, models]) => (
-            <optgroup key={provider} label={provider}>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
+          {/* モデル設定 */}
+          <div className="p-3 border border-slate-200 rounded-sm bg-white">
+            <h2 className="text-sm font-medium text-slate-700 mb-2">モデル</h2>
+            <p className="text-xs text-slate-500 mb-2">
+              Vision対応モデルを選択してください
+            </p>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
+            >
+              {Object.entries(modelsByProvider).map(([provider, models]) => (
+                <optgroup key={provider} label={provider}>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
-            </optgroup>
-          ))}
-        </select>
-      </div>
+            </select>
+          </div>
 
-      {/* プロンプト設定 */}
-      <div className="p-3 border border-slate-200 rounded-sm bg-white">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-medium text-slate-700">プロンプト</h2>
+          {/* 自動撮影間隔設定 */}
+          <div className="p-3 border border-slate-200 rounded-sm bg-white">
+            <h2 className="text-sm font-medium text-slate-700 mb-2">
+              自動撮影間隔
+            </h2>
+            <p className="text-xs text-slate-500 mb-2">
+              自動撮影時のスクリーンショット撮影間隔（秒）
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={10}
+                max={3600}
+                value={autoCaptureInterval}
+                onChange={(e) => setAutoCaptureInterval(Math.max(10, Math.min(3600, parseInt(e.target.value) || 60)))}
+                className="w-24 px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
+              />
+              <span className="text-sm text-slate-600">秒</span>
+              <span className="text-xs text-slate-500">（10〜3600秒）</span>
+            </div>
+          </div>
+
+          {/* 保存ボタン */}
           <button
             type="button"
-            onClick={handleResetPrompt}
-            className="px-2 py-1 text-xs border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-600 transition-colors"
+            onClick={handleSaveSettings}
+            disabled={isSaving}
+            className="w-full px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium transition-colors disabled:opacity-50"
           >
-            リセット
+            設定を保存
           </button>
         </div>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={4}
-          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400 resize-none"
-        />
-      </div>
 
-      {/* 自動撮影間隔設定 */}
-      <div className="p-3 border border-slate-200 rounded-sm bg-white">
-        <h2 className="text-sm font-medium text-slate-700 mb-2">
-          自動撮影間隔
-        </h2>
-        <p className="text-xs text-slate-500 mb-2">
-          自動撮影時のスクリーンショット撮影間隔（秒）
-        </p>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={10}
-            max={3600}
-            value={autoCaptureInterval}
-            onChange={(e) => setAutoCaptureInterval(Math.max(10, Math.min(3600, parseInt(e.target.value) || 60)))}
-            className="w-24 px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
-          />
-          <span className="text-sm text-slate-600">秒</span>
-          <span className="text-xs text-slate-500">（10〜3600秒）</span>
+        {/* 右カラム */}
+        <div className="space-y-4">
+          {/* プロンプト設定 */}
+          <div className="p-3 border border-slate-200 rounded-sm bg-white h-full">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-medium text-slate-700">プロンプト</h2>
+              <button
+                type="button"
+                onClick={handleResetPrompt}
+                className="px-2 py-1 text-xs border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-600 transition-colors"
+              >
+                リセット
+              </button>
+            </div>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={10}
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400 resize-none"
+            />
+          </div>
         </div>
       </div>
-
-      {/* 保存ボタン */}
-      <button
-        type="button"
-        onClick={handleSaveSettings}
-        disabled={isSaving}
-        className="w-full px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium transition-colors disabled:opacity-50"
-      >
-        設定を保存
-      </button>
     </div>
   );
 }

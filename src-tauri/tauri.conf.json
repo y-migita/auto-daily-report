@@ -14,8 +14,9 @@
       {
         "label": "main",
         "title": "ぱしゃログ",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 720,
+        "resizable": false,
         "backgroundColor": [248, 250, 252, 255]
       }
     ],
