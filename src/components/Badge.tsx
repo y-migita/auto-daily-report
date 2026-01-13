@@ -14,7 +14,7 @@ export function Badge({ children, variant = "default" }: BadgeProps) {
 
   return (
     <span
-      className={`px-2 py-0.5 text-xs rounded-full ${variantStyles[variant]}`}
+      className={`px-2 py-0.5 text-xs font-medium rounded-full ${variantStyles[variant]}`}
     >
       {children}
     </span>
