@@ -1,7 +1,6 @@
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::process::Command;
 
 use chrono::Local;
 use image::codecs::jpeg::JpegEncoder;
@@ -72,9 +71,10 @@ fn save_screenshot_to_pictures(source_path: &str) -> Result<String, String> {
         .ok_or("パスの変換に失敗しました".to_string())
 }
 
-/// スクリーンショットを撮影してリサイズ・JPEG圧縮して保存
+/// スクリーンショット画像をリサイズ・JPEG圧縮してPicturesフォルダに保存
+/// source_path: screenshotsプラグインから取得した一時画像ファイルのパス
 #[tauri::command]
-fn take_screenshot() -> Result<String, String> {
+fn process_screenshot(source_path: &str) -> Result<String, String> {
     // Picturesフォルダのパスを取得
     let pictures_dir = dirs::picture_dir().ok_or("Picturesフォルダが見つかりません")?;
 
@@ -107,28 +107,8 @@ fn take_screenshot() -> Result<String, String> {
         }
     }
 
-    // 一時ファイルにスクリーンショットを撮影（screencaptureコマンド使用）
-    let temp_file = tempfile::Builder::new()
-        .suffix(".png")
-        .tempfile()
-        .map_err(|e| format!("一時ファイル作成エラー: {}", e))?;
-    let temp_path = temp_file.path();
-
-    // screencaptureコマンドでメインディスプレイを撮影
-    let output = Command::new("screencapture")
-        .args(["-x", "-D", "1", temp_path.to_str().unwrap()])
-        .output()
-        .map_err(|e| format!("screencaptureエラー: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "screencapture失敗: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
     // 画像を読み込み
-    let img = image::open(temp_path).map_err(|e| format!("画像読み込みエラー: {}", e))?;
+    let img = image::open(source_path).map_err(|e| format!("画像読み込みエラー: {}", e))?;
 
     // FHD（1920幅）にリサイズ（アスペクト比維持）
     let (width, height) = img.dimensions();
@@ -148,6 +128,9 @@ fn take_screenshot() -> Result<String, String> {
         .encode_image(&resized)
         .map_err(|e| format!("JPEG保存エラー: {}", e))?;
 
+    // 元の一時ファイルを削除（エラーは無視）
+    let _ = fs::remove_file(source_path);
+
     // 新しいパスを返す
     dest_path
         .to_str()
@@ -162,11 +145,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_screenshots::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             open_screen_recording_settings,
             save_screenshot_to_pictures,
-            take_screenshot
+            process_screenshot
         ])
         .setup(|app| {
             // macOSでDockアイコンを非表示にしてメニューバーのみに表示
