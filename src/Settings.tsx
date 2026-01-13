@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 const DEFAULT_MODEL = "google/gemini-2.5-flash-preview-05-20";
 const DEFAULT_PROMPT =
   "このスクリーンショットから、今やっている作業を日本語で1〜3行で記録してください。固有名詞（アプリ名、ファイル名、URLなど）は可能な限り残してください。";
+const DEFAULT_AUTO_CAPTURE_INTERVAL = 60; // 秒
 
 // Vercel AI Gateway supported models (provider/model format)
 const AVAILABLE_MODELS = [
@@ -34,6 +35,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+  const [autoCaptureInterval, setAutoCaptureInterval] = useState(DEFAULT_AUTO_CAPTURE_INTERVAL);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -54,9 +56,11 @@ function Settings({ onSettingsChange }: SettingsProps) {
       const store = await load("settings.json");
       const savedModel = await store.get<string>("model");
       const savedPrompt = await store.get<string>("prompt");
+      const savedInterval = await store.get<number>("autoCaptureInterval");
 
       if (savedModel) setModel(savedModel);
       if (savedPrompt) setPrompt(savedPrompt);
+      if (savedInterval) setAutoCaptureInterval(savedInterval);
     } catch (error) {
       console.error("Failed to load settings:", error);
     }
@@ -102,6 +106,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
       const store = await load("settings.json");
       await store.set("model", model);
       await store.set("prompt", prompt);
+      await store.set("autoCaptureInterval", autoCaptureInterval);
       await store.save();
       setMessage({ type: "success", text: "設定を保存しました" });
       onSettingsChange?.();
@@ -234,6 +239,28 @@ function Settings({ onSettingsChange }: SettingsProps) {
         />
       </div>
 
+      {/* 自動撮影間隔設定 */}
+      <div className="p-3 border border-slate-200 rounded-sm bg-white">
+        <h2 className="text-sm font-medium text-slate-700 mb-2">
+          自動撮影間隔
+        </h2>
+        <p className="text-xs text-slate-500 mb-2">
+          自動撮影時のスクリーンショット撮影間隔（秒）
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={10}
+            max={3600}
+            value={autoCaptureInterval}
+            onChange={(e) => setAutoCaptureInterval(Math.max(10, Math.min(3600, parseInt(e.target.value) || 60)))}
+            className="w-24 px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
+          />
+          <span className="text-sm text-slate-600">秒</span>
+          <span className="text-xs text-slate-500">（10〜3600秒）</span>
+        </div>
+      </div>
+
       {/* 保存ボタン */}
       <button
         type="button"
@@ -249,4 +276,4 @@ function Settings({ onSettingsChange }: SettingsProps) {
 
 export default Settings;
 
-export { DEFAULT_MODEL, DEFAULT_PROMPT };
+export { DEFAULT_MODEL, DEFAULT_PROMPT, DEFAULT_AUTO_CAPTURE_INTERVAL };
