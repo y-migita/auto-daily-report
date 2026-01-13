@@ -1,6 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useEffect, useState } from "react";
+import {
+  checkScreenRecordingPermission,
+  requestScreenRecordingPermission,
+} from "tauri-plugin-macos-permissions-api";
 
 // Vercel AI Gateway uses provider/model format
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
@@ -26,6 +30,8 @@ const AVAILABLE_MODELS = [
   { id: "xai/grok-2-vision", name: "Grok 2 Vision", provider: "xAI" },
 ];
 
+type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
+
 interface SettingsProps {
   onSettingsChange?: () => void;
 }
@@ -41,10 +47,41 @@ function Settings({ onSettingsChange }: SettingsProps) {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>("checking");
 
   useEffect(() => {
     loadSettings();
+    checkPermission();
   }, []);
+
+  async function checkPermission(): Promise<boolean> {
+    setPermissionStatus("checking");
+    try {
+      const hasPermission = await checkScreenRecordingPermission();
+      setPermissionStatus(hasPermission ? "granted" : "denied");
+      return hasPermission;
+    } catch {
+      setPermissionStatus("unknown");
+      return false;
+    }
+  }
+
+  async function openScreenRecordingSettings() {
+    try {
+      await invoke("open_screen_recording_settings");
+    } catch (e) {
+      console.error("Failed to open settings:", e);
+    }
+  }
+
+  async function handleRequestPermission() {
+    try {
+      await requestScreenRecordingPermission();
+      await openScreenRecordingSettings();
+    } catch (e) {
+      console.error("Failed to request permission:", e);
+    }
+  }
 
   async function loadSettings() {
     try {
@@ -149,6 +186,61 @@ function Settings({ onSettingsChange }: SettingsProps) {
       <div className="grid grid-cols-2 gap-4">
         {/* 左カラム */}
         <div className="space-y-4">
+          {/* 撮影権限設定 */}
+          <div className="p-3 border border-slate-200 rounded-sm bg-white">
+            <h2 className="text-sm font-medium text-slate-700 mb-2">
+              画面収録の権限
+            </h2>
+            <p className="text-xs text-slate-500 mb-2">
+              スクリーンショットを撮影するには、画面収録の権限が必要です。
+            </p>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm text-slate-600">ステータス:</span>
+              <span
+                className={`px-2 py-0.5 text-xs rounded-sm border ${
+                  permissionStatus === "granted"
+                    ? "border-slate-400 bg-slate-100 text-slate-700"
+                    : permissionStatus === "denied"
+                      ? "border-slate-400 bg-slate-200 text-slate-700"
+                      : "border-slate-300 bg-slate-50 text-slate-600"
+                }`}
+              >
+                {permissionStatus === "granted"
+                  ? "許可済み"
+                  : permissionStatus === "denied"
+                    ? "拒否"
+                    : permissionStatus === "checking"
+                      ? "確認中"
+                      : "不明"}
+              </span>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={checkPermission}
+                className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors"
+              >
+                再確認
+              </button>
+              {permissionStatus === "denied" && (
+                <button
+                  type="button"
+                  onClick={handleRequestPermission}
+                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white transition-colors"
+                >
+                  権限を要求
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={openScreenRecordingSettings}
+                className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors"
+              >
+                システム設定を開く
+              </button>
+            </div>
+          </div>
+
           {/* APIキー設定 */}
           <div className="p-3 border border-slate-200 rounded-sm bg-white">
             <h2 className="text-sm font-medium text-slate-700 mb-2">
