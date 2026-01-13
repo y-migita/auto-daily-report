@@ -31,7 +31,7 @@ function App() {
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(DEFAULT_AUTO_CAPTURE_INTERVAL);
   const [nextCaptureTime, setNextCaptureTime] = useState<Date | null>(null);
   const [captureCount, setCaptureCount] = useState(0);
-  const autoCaptureTImerRef = useRef<number | null>(null);
+  const autoCaptureTimerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
 
   // トレーアイコン更新用関数
@@ -113,8 +113,8 @@ function App() {
   // 自動撮影のクリーンアップ
   useEffect(() => {
     return () => {
-      if (autoCaptureTImerRef.current) {
-        clearInterval(autoCaptureTImerRef.current);
+      if (autoCaptureTimerRef.current) {
+        clearInterval(autoCaptureTimerRef.current);
       }
       if (countdownTimerRef.current) {
         clearInterval(countdownTimerRef.current);
@@ -203,7 +203,6 @@ function App() {
       const assetUrl = `${convertFileSrc(savedPath)}?t=${Date.now()}`;
       setScreenshotSrc(assetUrl);
 
-      setCaptureCount((prev) => prev + 1);
       setDebugInfo(`自動撮影: ${savedPath}`);
     } catch (error) {
       setDebugInfo(`自動撮影エラー: ${error}`);
@@ -227,7 +226,7 @@ function App() {
     setNextCaptureTime(nextTime);
 
     // 撮影タイマーを設定
-    autoCaptureTImerRef.current = window.setInterval(() => {
+    autoCaptureTimerRef.current = window.setInterval(() => {
       takeScreenshotForAuto();
       setCaptureCount((prev) => prev + 1);
       setNextCaptureTime(new Date(Date.now() + autoCaptureInterval * 1000));
@@ -251,9 +250,9 @@ function App() {
 
   // 自動撮影を停止
   async function stopAutoCapture() {
-    if (autoCaptureTImerRef.current) {
-      clearInterval(autoCaptureTImerRef.current);
-      autoCaptureTImerRef.current = null;
+    if (autoCaptureTimerRef.current) {
+      clearInterval(autoCaptureTimerRef.current);
+      autoCaptureTimerRef.current = null;
     }
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
