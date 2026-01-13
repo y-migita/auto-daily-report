@@ -2,15 +2,27 @@ import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useEffect, useState } from "react";
 
-const DEFAULT_MODEL = "gemini-2.5-flash-lite";
+// Vercel AI Gateway uses provider/model format
+const DEFAULT_MODEL = "google/gemini-2.5-flash-preview-05-20";
 const DEFAULT_PROMPT =
   "このスクリーンショットから、今やっている作業を日本語で1〜3行で記録してください。固有名詞（アプリ名、ファイル名、URLなど）は可能な限り残してください。";
 
+// Vercel AI Gateway supported models (provider/model format)
 const AVAILABLE_MODELS = [
-  { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite (推奨)" },
-  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
-  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash" },
-  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro" },
+  // Google
+  { id: "google/gemini-2.5-flash-preview-05-20", name: "Gemini 2.5 Flash (推奨)", provider: "Google" },
+  { id: "google/gemini-2.5-pro-preview-05-06", name: "Gemini 2.5 Pro", provider: "Google" },
+  { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google" },
+  // OpenAI
+  { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
+  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI" },
+  { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
+  // Anthropic
+  { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "Anthropic" },
+  { id: "anthropic/claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
+  { id: "anthropic/claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "Anthropic" },
+  // xAI
+  { id: "xai/grok-2-vision-1212", name: "Grok 2 Vision", provider: "xAI" },
 ];
 
 interface SettingsProps {
@@ -35,7 +47,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
   async function loadSettings() {
     try {
       // APIキーの存在確認
-      const hasKey = await invoke<boolean>("has_gemini_api_key");
+      const hasKey = await invoke<boolean>("has_vercel_api_key");
       setHasApiKey(hasKey);
 
       // Storeから設定を読み込み
@@ -58,7 +70,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
 
     setIsSaving(true);
     try {
-      await invoke("set_gemini_api_key", { apiKey: apiKey.trim() });
+      await invoke("set_vercel_api_key", { apiKey: apiKey.trim() });
       setHasApiKey(true);
       setApiKey("");
       setMessage({ type: "success", text: "APIキーを保存しました" });
@@ -73,7 +85,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
   async function handleDeleteApiKey() {
     setIsSaving(true);
     try {
-      await invoke("delete_gemini_api_key");
+      await invoke("delete_vercel_api_key");
       setHasApiKey(false);
       setMessage({ type: "success", text: "APIキーを削除しました" });
       onSettingsChange?.();
@@ -104,6 +116,16 @@ function Settings({ onSettingsChange }: SettingsProps) {
     setPrompt(DEFAULT_PROMPT);
   }
 
+  // Group models by provider
+  const modelsByProvider = AVAILABLE_MODELS.reduce(
+    (acc, m) => {
+      if (!acc[m.provider]) acc[m.provider] = [];
+      acc[m.provider].push(m);
+      return acc;
+    },
+    {} as Record<string, typeof AVAILABLE_MODELS>
+  );
+
   return (
     <div className="space-y-4">
       {/* メッセージ表示 */}
@@ -122,10 +144,18 @@ function Settings({ onSettingsChange }: SettingsProps) {
       {/* APIキー設定 */}
       <div className="p-3 border border-slate-200 rounded-sm bg-white">
         <h2 className="text-sm font-medium text-slate-700 mb-2">
-          Gemini APIキー
+          Vercel AI Gateway APIキー
         </h2>
         <p className="text-xs text-slate-500 mb-2">
           APIキーはmacOS Keychainに安全に保存されます。
+          <a
+            href="https://vercel.com/ai-gateway"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-600 underline ml-1"
+          >
+            APIキーを取得
+          </a>
         </p>
 
         {hasApiKey ? (
@@ -164,15 +194,22 @@ function Settings({ onSettingsChange }: SettingsProps) {
       {/* モデル設定 */}
       <div className="p-3 border border-slate-200 rounded-sm bg-white">
         <h2 className="text-sm font-medium text-slate-700 mb-2">モデル</h2>
+        <p className="text-xs text-slate-500 mb-2">
+          Vision対応モデルを選択してください
+        </p>
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
           className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white focus:outline-none focus:border-slate-400"
         >
-          {AVAILABLE_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
+          {Object.entries(modelsByProvider).map(([provider, models]) => (
+            <optgroup key={provider} label={provider}>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>

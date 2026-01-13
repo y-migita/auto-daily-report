@@ -17,7 +17,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 // Keychain constants
 const SERVICE: &str = "com.andeco.auto-daily-report";
-const ACCOUNT: &str = "GEMINI_API_KEY";
+const ACCOUNT: &str = "VERCEL_API_KEY";
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -147,13 +147,13 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
 // ==================== Keychain Commands ====================
 
 #[tauri::command]
-fn set_gemini_api_key(api_key: String) -> Result<(), String> {
+fn set_vercel_api_key(api_key: String) -> Result<(), String> {
     let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
     entry.set_password(&api_key).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn has_gemini_api_key() -> Result<bool, String> {
+fn has_vercel_api_key() -> Result<bool, String> {
     let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
     match entry.get_password() {
         Ok(_) => Ok(true),
@@ -163,7 +163,7 @@ fn has_gemini_api_key() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn delete_gemini_api_key() -> Result<(), String> {
+fn delete_vercel_api_key() -> Result<(), String> {
     let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
     match entry.delete_credential() {
         Ok(_) => Ok(()),
@@ -172,36 +172,31 @@ fn delete_gemini_api_key() -> Result<(), String> {
     }
 }
 
-fn get_gemini_api_key() -> Result<String, String> {
+fn get_vercel_api_key() -> Result<String, String> {
     let entry = Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())?;
     entry.get_password().map_err(|e| e.to_string())
 }
 
-// ==================== Gemini API ====================
+// ==================== Vercel AI Gateway (OpenAI-compatible) ====================
 
 #[derive(serde::Deserialize)]
-struct GeminiResponse {
-    candidates: Option<Vec<GeminiCandidate>>,
-    error: Option<GeminiError>,
+struct OpenAIResponse {
+    choices: Option<Vec<OpenAIChoice>>,
+    error: Option<OpenAIError>,
 }
 
 #[derive(serde::Deserialize)]
-struct GeminiCandidate {
-    content: GeminiContent,
+struct OpenAIChoice {
+    message: OpenAIMessage,
 }
 
 #[derive(serde::Deserialize)]
-struct GeminiContent {
-    parts: Vec<GeminiPart>,
+struct OpenAIMessage {
+    content: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
-struct GeminiPart {
-    text: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct GeminiError {
+struct OpenAIError {
     message: String,
 }
 
@@ -214,11 +209,11 @@ fn image_to_base64(path: &str) -> Result<String, String> {
     Ok(STANDARD.encode(buffer))
 }
 
-/// Gemini APIを呼び出してスクリーンショットを解析する
+/// Vercel AI Gateway (OpenAI-compatible API)を呼び出してスクリーンショットを解析する
 #[tauri::command]
 async fn analyze_screenshot(image_path: String, model: String, prompt: String) -> Result<String, String> {
     // APIキーを取得
-    let api_key = get_gemini_api_key()?;
+    let api_key = get_vercel_api_key()?;
 
     // 画像をbase64エンコード
     let image_base64 = image_to_base64(&image_path)?;
@@ -230,35 +225,37 @@ async fn analyze_screenshot(image_path: String, model: String, prompt: String) -
         "image/jpeg"
     };
 
-    // API URL
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-        model, api_key
-    );
+    // Vercel AI Gateway URL (OpenAI-compatible)
+    let url = "https://ai-gateway.vercel.sh/v1/chat/completions";
 
-    // リクエストボディ
+    // OpenAI形式のリクエストボディ（vision対応）
     let body = serde_json::json!({
-        "contents": [{
-            "parts": [
-                { "text": prompt },
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
                 {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": image_base64
+                    "type": "text",
+                    "text": prompt
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:{};base64,{}", mime_type, image_base64)
                     }
                 }
             ]
         }],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 1024
-        }
+        "max_tokens": 1024,
+        "temperature": 0.2
     });
 
     // APIを呼び出し
     let client = reqwest::Client::new();
     let response = client
-        .post(&url)
+        .post(url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
         .json(&body)
         .send()
         .await
@@ -274,21 +271,20 @@ async fn analyze_screenshot(image_path: String, model: String, prompt: String) -
         return Err(format!("API エラー ({}): {}", status, response_text));
     }
 
-    let gemini_response: GeminiResponse =
+    let openai_response: OpenAIResponse =
         serde_json::from_str(&response_text).map_err(|e| format!("JSONパースエラー: {}", e))?;
 
     // エラーチェック
-    if let Some(error) = gemini_response.error {
-        return Err(format!("Gemini エラー: {}", error.message));
+    if let Some(error) = openai_response.error {
+        return Err(format!("API エラー: {}", error.message));
     }
 
     // テキストを取得
-    let text = gemini_response
-        .candidates
+    let text = openai_response
+        .choices
         .and_then(|c| c.into_iter().next())
-        .and_then(|c| c.content.parts.into_iter().next())
-        .and_then(|p| p.text)
-        .ok_or("Geminiからテキストが返されませんでした")?;
+        .and_then(|c| c.message.content)
+        .ok_or("AIからテキストが返されませんでした")?;
 
     Ok(text)
 }
@@ -307,9 +303,9 @@ pub fn run() {
             open_screen_recording_settings,
             save_screenshot_to_pictures,
             process_screenshot,
-            set_gemini_api_key,
-            has_gemini_api_key,
-            delete_gemini_api_key,
+            set_vercel_api_key,
+            has_vercel_api_key,
+            delete_vercel_api_key,
             analyze_screenshot
         ])
         .setup(|app| {

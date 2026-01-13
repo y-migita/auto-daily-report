@@ -28,7 +28,7 @@ function App() {
 
   async function checkApiKey() {
     try {
-      const has = await invoke<boolean>("has_gemini_api_key");
+      const has = await invoke<boolean>("has_vercel_api_key");
       setHasApiKey(has);
     } catch {
       setHasApiKey(false);
