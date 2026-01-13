@@ -284,6 +284,7 @@ struct LocationInfo {
 }
 
 /// 現在接続中のWiFi SSIDを取得（macOS）
+/// 注意: macOS 14以降では位置情報サービスの許可が必要
 #[cfg(target_os = "macos")]
 fn get_wifi_ssid() -> Option<String> {
     unsafe {
@@ -291,7 +292,8 @@ fn get_wifi_ssid() -> Option<String> {
         let client = CWWiFiClient::sharedWiFiClient();
         let interface = client.interface()?;
         let ssid = interface.ssid()?;
-        Some(ssid.to_str().to_string())
+        // NSStringはDisplayトレイトを実装しているのでto_string()で変換
+        Some(ssid.to_string())
     }
 }
 
@@ -303,6 +305,7 @@ fn get_wifi_ssid() -> Option<String> {
 /// 現在の位置情報を取得（macOS）
 /// CoreLocationは非同期のデリゲートパターンが必要なため、
 /// 同期的に取得するにはlocationServicesEnabledの確認と最後の既知位置を使用
+/// 注意: 初回は位置情報がキャッシュされていない場合Noneを返す
 #[cfg(target_os = "macos")]
 fn get_location() -> Option<LocationInfo> {
     unsafe {
@@ -315,10 +318,13 @@ fn get_location() -> Option<LocationInfo> {
 
         // 認可状態を確認（macOS 11+）
         let status = manager.authorizationStatus();
+        // AuthorizedAlways, AuthorizedWhenInUse, Authorized（deprecated）のいずれかで許可
         if status == CLAuthorizationStatus::AuthorizedAlways
+            || status == CLAuthorizationStatus::AuthorizedWhenInUse
             || status == CLAuthorizationStatus::Authorized
         {
             // 最後の既知位置を取得（利用可能な場合）
+            // 注意: 他のアプリが位置情報を使用していないとキャッシュがない場合がある
             if let Some(location) = manager.location() {
                 let coordinate = location.coordinate();
                 return Some(LocationInfo {
