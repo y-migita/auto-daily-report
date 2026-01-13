@@ -72,7 +72,7 @@ src-tauri/              # Tauriバックエンド（Rust）
 ### スクリーンショット保存
 
 - 保存先: `~/Pictures/auto-daily-report/YYYY-MM-DD/`
-- ファイル名形式: `screenshot_HH-MM-SS_NNN.jpg`（時刻 + 連番、JPEG形式）
+- ファイル名形式: `YYYYMMDD_HHMMSS_NNN.jpg`（年月日_時刻_連番、JPEG形式、ソート可能）
 - 画像処理: 1920px幅にリサイズ（Lanczos3）、JPEG品質80で圧縮
 - 依存クレート: `dirs`（Picturesフォルダ取得）、`chrono`（日時フォーマット）、`image`（画像処理）
 
