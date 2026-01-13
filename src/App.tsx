@@ -34,6 +34,7 @@ function App() {
   const [captureCount, setCaptureCount] = useState(0);
   const autoCaptureTimerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
+  const isStoppingRef = useRef(false);
 
   // トレーアイコン更新用関数
   const updateTrayTitle = useCallback(async (title: string) => {
@@ -215,6 +216,9 @@ function App() {
   async function startAutoCapture() {
     if (isAutoCapturing) return;
 
+    // 停止フラグをリセット
+    isStoppingRef.current = false;
+
     // ツールチップを更新
     await updateTrayTooltip(`自動撮影中（${autoCaptureInterval}秒間隔）`);
 
@@ -235,6 +239,9 @@ function App() {
 
     // カウントダウン更新用タイマー（1秒ごと）- トレーアイコンも同時更新
     countdownTimerRef.current = window.setInterval(() => {
+      // 停止フラグが立っている場合はトレーアイコンを更新しない
+      if (isStoppingRef.current) return;
+
       setNextCaptureTime((prev) => {
         if (prev) {
           const remaining = Math.max(0, Math.ceil((prev.getTime() - Date.now()) / 1000));
@@ -251,6 +258,9 @@ function App() {
 
   // 自動撮影を停止
   async function stopAutoCapture() {
+    // 停止フラグを先に立てて、タイマーコールバックからのトレー更新を防ぐ
+    isStoppingRef.current = true;
+
     if (autoCaptureTimerRef.current) {
       clearInterval(autoCaptureTimerRef.current);
       autoCaptureTimerRef.current = null;
