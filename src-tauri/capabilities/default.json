@@ -7,6 +7,7 @@
     "core:default",
     "opener:default",
     "macos-permissions:default",
+    "screenshots:default",
     {
       "identifier": "shell:allow-open",
       "allow": [

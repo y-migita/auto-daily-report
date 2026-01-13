@@ -1,6 +1,13 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { checkScreenRecordingPermission } from "tauri-plugin-macos-permissions-api";
+import {
+  checkScreenRecordingPermission,
+  requestScreenRecordingPermission,
+} from "tauri-plugin-macos-permissions-api";
+import {
+  getScreenshotableMonitors,
+  getMonitorScreenshot,
+} from "tauri-plugin-screenshots-api";
 
 type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
 
@@ -34,6 +41,20 @@ function App() {
     }
   }
 
+  async function handleRequestPermission() {
+    try {
+      setDebugInfo("Requesting screen recording permission...");
+      await requestScreenRecordingPermission();
+      setDebugInfo(
+        "Permission requested. Please enable in System Settings and restart the app."
+      );
+      // 権限設定を開く
+      await openScreenRecordingSettings();
+    } catch (e) {
+      setDebugInfo(`Failed to request permission: ${e}`);
+    }
+  }
+
   useEffect(() => {
     checkPermission();
   }, []);
@@ -42,10 +63,43 @@ function App() {
     setIsCapturing(true);
     setDebugInfo("Starting capture...");
     try {
-      // Rustコマンドで撮影・リサイズ・JPEG保存を一括実行
-      const savedPath = await invoke<string>("take_screenshot");
-      setDebugInfo(`Saved to: ${savedPath}`);
+      // 権限チェック
+      const hasPermission = await checkScreenRecordingPermission();
+      if (!hasPermission) {
+        setDebugInfo(
+          "Screen recording permission denied. Please enable in System Settings."
+        );
+        setPermissionStatus("denied");
+        await requestScreenRecordingPermission();
+        await openScreenRecordingSettings();
+        return;
+      }
 
+      // モニター一覧を取得
+      setDebugInfo("Getting monitors...");
+      const monitors = await getScreenshotableMonitors();
+      if (!monitors || monitors.length === 0) {
+        setDebugInfo(
+          "No monitors found. This typically means screen recording permission is not granted."
+        );
+        setPermissionStatus("denied");
+        return;
+      }
+      setDebugInfo(`Found ${monitors.length} monitor(s)`);
+
+      // メインモニターのスクリーンショットを取得
+      const mainMonitor = monitors[0];
+      setDebugInfo(`Taking screenshot of monitor: ${mainMonitor.id}`);
+      const tempPath = await getMonitorScreenshot(mainMonitor.id);
+      setDebugInfo(`Screenshot captured to: ${tempPath}`);
+
+      // Rustでリサイズ・JPEG変換・保存
+      const savedPath = await invoke<string>("process_screenshot", {
+        sourcePath: tempPath,
+      });
+      setDebugInfo(`Processed and saved to: ${savedPath}`);
+
+      // 表示
       const assetUrl = `${convertFileSrc(savedPath)}?t=${Date.now()}`;
       setScreenshotSrc(assetUrl);
     } catch (error) {
@@ -94,6 +148,15 @@ function App() {
               >
                 再確認
               </button>
+              {permissionStatus === "denied" && (
+                <button
+                  type="button"
+                  onClick={handleRequestPermission}
+                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white transition-colors"
+                >
+                  権限を要求
+                </button>
+              )}
               <button
                 type="button"
                 onClick={openScreenRecordingSettings}

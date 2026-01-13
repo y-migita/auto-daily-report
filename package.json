@@ -19,7 +19,8 @@
     "@tauri-apps/plugin-shell": "^2.3.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "tauri-plugin-macos-permissions-api": "^2.3.0"
+    "tauri-plugin-macos-permissions-api": "^2.3.0",
+    "tauri-plugin-screenshots-api": "^2.0.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",
