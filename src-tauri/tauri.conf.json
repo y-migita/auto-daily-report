@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "ぱしゃログ",
         "width": 800,
         "height": 600,
@@ -19,6 +20,7 @@
       }
     ],
     "security": {
+      "freezePrototype": true,
       "csp": {
         "default-src": "'self'",
         "connect-src": "'self' https://ai-gateway.vercel.sh ipc: http://ipc.localhost",
