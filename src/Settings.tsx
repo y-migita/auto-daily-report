@@ -3,7 +3,7 @@ import { load } from "@tauri-apps/plugin-store";
 import { useEffect, useState } from "react";
 
 // Vercel AI Gateway uses provider/model format
-const DEFAULT_MODEL = "google/gemini-2.5-flash-preview-05-20";
+const DEFAULT_MODEL = "google/gemini-2.5-flash";
 const DEFAULT_PROMPT =
   "このスクリーンショットから、今やっている作業を日本語で1〜3行で記録してください。固有名詞（アプリ名、ファイル名、URLなど）は可能な限り残してください。";
 const DEFAULT_AUTO_CAPTURE_INTERVAL = 60; // 秒
@@ -11,19 +11,19 @@ const DEFAULT_AUTO_CAPTURE_INTERVAL = 60; // 秒
 // Vercel AI Gateway supported models (provider/model format)
 const AVAILABLE_MODELS = [
   // Google
-  { id: "google/gemini-2.5-flash-preview-05-20", name: "Gemini 2.5 Flash (推奨)", provider: "Google" },
-  { id: "google/gemini-2.5-pro-preview-05-06", name: "Gemini 2.5 Pro", provider: "Google" },
+  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash (推奨)", provider: "Google" },
+  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "Google" },
   { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "Google" },
   // OpenAI
   { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
   { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI" },
-  { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
+  { id: "openai/gpt-4.1", name: "GPT-4.1", provider: "OpenAI" },
   // Anthropic
-  { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4", provider: "Anthropic" },
-  { id: "anthropic/claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
-  { id: "anthropic/claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku", provider: "Anthropic" },
+  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", provider: "Anthropic" },
+  { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
+  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic" },
   // xAI
-  { id: "xai/grok-2-vision-1212", name: "Grok 2 Vision", provider: "xAI" },
+  { id: "xai/grok-2-vision", name: "Grok 2 Vision", provider: "xAI" },
 ];
 
 interface SettingsProps {
