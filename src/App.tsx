@@ -10,6 +10,7 @@ import {
   getMonitorScreenshot,
 } from "tauri-plugin-screenshots-api";
 import Settings, { DEFAULT_MODEL, DEFAULT_PROMPT, DEFAULT_AUTO_CAPTURE_INTERVAL } from "./Settings";
+import { Badge } from "./components/Badge";
 
 type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
 type Tab = "capture" | "settings";
@@ -347,14 +348,14 @@ function App() {
             <div className="w-80 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
               {/* ステータス表示 */}
               <div className="flex items-center gap-2">
-                <span
-                  className={`px-2 py-0.5 text-xs rounded-sm border ${
+                <Badge
+                  variant={
                     permissionStatus === "granted"
-                      ? "border-slate-400 bg-slate-100 text-slate-700"
+                      ? "default"
                       : permissionStatus === "denied"
-                        ? "border-slate-400 bg-slate-200 text-slate-700"
-                        : "border-slate-300 bg-slate-50 text-slate-600"
-                  }`}
+                        ? "warning"
+                        : "muted"
+                  }
                 >
                   {permissionStatus === "granted"
                     ? "権限: 許可済み"
@@ -363,12 +364,8 @@ function App() {
                       : permissionStatus === "checking"
                         ? "権限: 確認中"
                         : "権限: 不明"}
-                </span>
-                {!hasApiKey && (
-                  <span className="px-2 py-0.5 text-xs rounded-sm border border-slate-400 bg-slate-200 text-slate-700">
-                    APIキー未設定
-                  </span>
-                )}
+                </Badge>
+                {!hasApiKey && <Badge variant="warning">APIキー未設定</Badge>}
               </div>
 
               {/* デバッグ情報 */}
@@ -410,9 +407,7 @@ function App() {
                 <div className="flex items-center gap-2">
                   {isAutoCapturing ? (
                     <>
-                      <span className="px-2 py-0.5 text-xs rounded-sm border border-slate-400 bg-slate-100 text-slate-700">
-                        {captureCount}枚撮影済み
-                      </span>
+                      <Badge>{captureCount}枚撮影済み</Badge>
                       <span className="text-xs text-slate-500">
                         次回まで {getRemainingSeconds()}秒
                       </span>
