@@ -31,6 +31,7 @@ bun run tauri dev
 bun run tauri build
 
 # コード品質
+bun run typecheck # 型チェック
 bun run lint      # リント
 bun run format    # フォーマット
 bun run check     # リント + フォーマット
