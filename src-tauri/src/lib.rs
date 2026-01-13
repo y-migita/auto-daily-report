@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView};
+use image::GenericImageView;
 use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -54,53 +54,6 @@ fn validate_temp_path(source_path: &str) -> Result<PathBuf, String> {
     }
 
     Ok(canonical)
-}
-
-#[tauri::command]
-fn save_screenshot_to_pictures(source_path: &str) -> Result<String, String> {
-    // パスのバリデーション
-    let validated_source = validate_temp_path(source_path)?;
-
-    // Picturesフォルダのパスを取得
-    let pictures_dir = dirs::picture_dir().ok_or("Picturesフォルダが見つかりません")?;
-
-    // アプリ用フォルダを作成
-    let app_dir = pictures_dir.join("auto-daily-report");
-    fs::create_dir_all(&app_dir).map_err(|e| format!("フォルダ作成エラー: {}", e))?;
-
-    // 日付フォルダを作成 (YYYY-MM-DD)
-    let now = Local::now();
-    let date_str = now.format("%Y-%m-%d").to_string();
-    let date_dir = app_dir.join(&date_str);
-    fs::create_dir_all(&date_dir).map_err(|e| format!("日付フォルダ作成エラー: {}", e))?;
-
-    // 時刻を取得 (HH-MM-SS)
-    let time_str = now.format("%H-%M-%S").to_string();
-
-    // 連番を探す
-    let mut counter = 1;
-    let dest_path: PathBuf;
-    loop {
-        let filename = format!("screenshot_{}_{:03}.png", time_str, counter);
-        let candidate = date_dir.join(&filename);
-        if !candidate.exists() {
-            dest_path = candidate;
-            break;
-        }
-        counter += 1;
-        if counter > 999 {
-            return Err("連番の上限に達しました".to_string());
-        }
-    }
-
-    // ファイルをコピー
-    fs::copy(&validated_source, &dest_path).map_err(|e| format!("ファイルコピーエラー: {}", e))?;
-
-    // 新しいパスを返す
-    dest_path
-        .to_str()
-        .map(|s| s.to_string())
-        .ok_or("パスの変換に失敗しました".to_string())
 }
 
 /// スクリーンショット画像をリサイズ・JPEG圧縮してPicturesフォルダに保存
@@ -163,8 +116,10 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
         .write_with_encoder(encoder)
         .map_err(|e| format!("JPEG保存エラー: {}", e))?;
 
-    // 元の一時ファイルを削除（エラーは無視）
-    let _ = fs::remove_file(&validated_source);
+    // 元の一時ファイルを削除（失敗してもログを出力して続行）
+    if let Err(e) = fs::remove_file(&validated_source) {
+        eprintln!("一時ファイルの削除に失敗しました: {} - {}", validated_source.display(), e);
+    }
 
     // 新しいパスを返す
     dest_path
@@ -338,7 +293,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             open_screen_recording_settings,
-            save_screenshot_to_pictures,
             process_screenshot,
             set_vercel_api_key,
             has_vercel_api_key,
