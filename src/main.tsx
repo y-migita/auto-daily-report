@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "@fontsource/zen-maru-gothic";
+import "@fontsource/zen-maru-gothic/400.css";
+import "@fontsource/zen-maru-gothic/500.css";
+import "@fontsource/zen-maru-gothic/700.css";
 import App from "./App";
 import "./App.css";
 

@@ -189,7 +189,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
         <div className="space-y-4">
           {/* 撮影権限設定 */}
           <div className="p-3 border border-slate-200 rounded-sm bg-white">
-            <h2 className="text-sm font-medium text-slate-700 mb-2">
+            <h2 className="text-sm font-bold text-slate-700 mb-2">
               画面収録の権限
             </h2>
             <p className="text-xs text-slate-500 mb-2">
@@ -227,7 +227,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
                 <button
                   type="button"
                   onClick={handleRequestPermission}
-                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white transition-colors"
+                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-bold transition-colors"
                 >
                   権限を要求
                 </button>
@@ -244,7 +244,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
 
           {/* APIキー設定 */}
           <div className="p-3 border border-slate-200 rounded-sm bg-white">
-            <h2 className="text-sm font-medium text-slate-700 mb-2">
+            <h2 className="text-sm font-bold text-slate-700 mb-2">
               Vercel AI Gateway APIキー
             </h2>
             <p className="text-xs text-slate-500 mb-2">
@@ -284,7 +284,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
                   type="button"
                   onClick={handleSaveApiKey}
                   disabled={isSaving}
-                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium transition-colors disabled:opacity-50"
+                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-bold transition-colors disabled:opacity-50"
                 >
                   保存
                 </button>
@@ -294,7 +294,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
 
           {/* モデル設定 */}
           <div className="p-3 border border-slate-200 rounded-sm bg-white">
-            <h2 className="text-sm font-medium text-slate-700 mb-2">モデル</h2>
+            <h2 className="text-sm font-bold text-slate-700 mb-2">モデル</h2>
             <p className="text-xs text-slate-500 mb-2">
               Vision対応モデルを選択してください
             </p>
@@ -317,7 +317,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
 
           {/* 自動撮影間隔設定 */}
           <div className="p-3 border border-slate-200 rounded-sm bg-white">
-            <h2 className="text-sm font-medium text-slate-700 mb-2">
+            <h2 className="text-sm font-bold text-slate-700 mb-2">
               自動撮影間隔
             </h2>
             <p className="text-xs text-slate-500 mb-2">
@@ -342,7 +342,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
             type="button"
             onClick={handleSaveSettings}
             disabled={isSaving}
-            className="w-full px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium transition-colors disabled:opacity-50"
+            className="w-full px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-bold transition-colors disabled:opacity-50"
           >
             設定を保存
           </button>
@@ -353,7 +353,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
           {/* プロンプト設定 */}
           <div className="p-3 border border-slate-200 rounded-sm bg-white h-full">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-medium text-slate-700">プロンプト</h2>
+              <h2 className="text-sm font-bold text-slate-700">プロンプト</h2>
               <button
                 type="button"
                 onClick={handleResetPrompt}
