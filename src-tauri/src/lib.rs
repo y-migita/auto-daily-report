@@ -318,10 +318,9 @@ fn get_location() -> Option<LocationInfo> {
 
         // 認可状態を確認（macOS 11+）
         let status = manager.authorizationStatus();
-        // AuthorizedAlways, AuthorizedWhenInUse, Authorized（deprecated）のいずれかで許可
+        // AuthorizedAlways または AuthorizedWhenInUse で許可
         if status == CLAuthorizationStatus::AuthorizedAlways
             || status == CLAuthorizationStatus::AuthorizedWhenInUse
-            || status == CLAuthorizationStatus::Authorized
         {
             // 最後の既知位置を取得（利用可能な場合）
             // 注意: 他のアプリが位置情報を使用していないとキャッシュがない場合がある
