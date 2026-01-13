@@ -1,109 +1,136 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { useState } from "react";
-import {
-  getMonitorScreenshot,
-  getScreenshotableMonitors,
-} from "tauri-plugin-screenshots-api";
-import reactLogo from "./assets/react.svg";
-import "./App.css";
+import { useEffect, useState } from "react";
+import { checkScreenRecordingPermission } from "tauri-plugin-macos-permissions-api";
+
+type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
   const [screenshotSrc, setScreenshotSrc] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [permissionStatus, setPermissionStatus] =
+    useState<PermissionStatus>("checking");
+  const [debugInfo, setDebugInfo] = useState<string>("");
 
-  async function greet() {
-    setGreetMsg(await invoke("greet", { name }));
+  async function checkPermission(): Promise<boolean> {
+    setPermissionStatus("checking");
+    try {
+      const hasPermission = await checkScreenRecordingPermission();
+      setDebugInfo(`Screen recording permission: ${hasPermission}`);
+      setPermissionStatus(hasPermission ? "granted" : "denied");
+      return hasPermission;
+    } catch (e) {
+      setDebugInfo(`Error checking permission: ${e}`);
+      setPermissionStatus("unknown");
+      return false;
+    }
   }
+
+  async function openScreenRecordingSettings() {
+    try {
+      await invoke("open_screen_recording_settings");
+      setDebugInfo("Opened screen recording settings");
+    } catch (e) {
+      setDebugInfo(`Failed to open settings: ${e}`);
+    }
+  }
+
+  useEffect(() => {
+    checkPermission();
+  }, []);
 
   async function takeScreenshot() {
     setIsCapturing(true);
+    setDebugInfo("Starting capture...");
     try {
-      const monitors = await getScreenshotableMonitors();
-      if (monitors.length === 0) {
-        alert("No monitors available for screenshot");
-        return;
-      }
-      const path = await getMonitorScreenshot(monitors[0].id);
-      const assetUrl = convertFileSrc(path);
+      // Rustコマンドで撮影・リサイズ・JPEG保存を一括実行
+      const savedPath = await invoke<string>("take_screenshot");
+      setDebugInfo(`Saved to: ${savedPath}`);
+
+      const assetUrl = `${convertFileSrc(savedPath)}?t=${Date.now()}`;
       setScreenshotSrc(assetUrl);
     } catch (error) {
+      setDebugInfo(`Error: ${error}`);
       console.error("Failed to take screenshot:", error);
-      alert(`Failed to take screenshot: ${error}`);
     } finally {
       setIsCapturing(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 pt-[10vh] flex flex-col items-center">
-      <h1 className="text-3xl font-bold mb-6">Welcome to Tauri + React</h1>
+    <main className="min-h-screen bg-slate-50 text-slate-800 p-4">
+      <div className="max-w-2xl">
+        <h1 className="text-xl font-medium mb-4 text-slate-700">
+          スクリーンショット
+        </h1>
 
-      <div className="flex justify-center gap-4 mb-4">
-        <a href="https://vite.dev" target="_blank" rel="noopener">
-          <img
-            src="/vite.svg"
-            className="h-24 p-6 transition-all duration-700 hover:drop-shadow-[0_0_2em_#747bff]"
-            alt="Vite logo"
-          />
-        </a>
-        <a href="https://tauri.app" target="_blank" rel="noopener">
-          <img
-            src="/tauri.svg"
-            className="h-24 p-6 transition-all duration-700 hover:drop-shadow-[0_0_2em_#24c8db]"
-            alt="Tauri logo"
-          />
-        </a>
-        <a href="https://react.dev" target="_blank" rel="noopener">
-          <img
-            src={reactLogo}
-            className="h-24 p-6 transition-all duration-700 hover:drop-shadow-[0_0_2em_#61dafb]"
-            alt="React logo"
-          />
-        </a>
-      </div>
-      <p className="mb-6">
-        Click on the Tauri, Vite, and React logos to learn more.
-      </p>
+        {/* 権限ステータス */}
+        <div className="mb-3 p-3 border border-slate-200 rounded-sm bg-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">権限:</span>
+              <span
+                className={`px-2 py-0.5 text-xs rounded-sm border ${
+                  permissionStatus === "granted"
+                    ? "border-slate-400 bg-slate-100 text-slate-700"
+                    : permissionStatus === "denied"
+                      ? "border-slate-400 bg-slate-200 text-slate-700"
+                      : "border-slate-300 bg-slate-50 text-slate-600"
+                }`}
+              >
+                {permissionStatus === "granted"
+                  ? "許可済み"
+                  : permissionStatus === "denied"
+                    ? "拒否"
+                    : permissionStatus === "checking"
+                      ? "確認中"
+                      : "不明"}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={checkPermission}
+                className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors"
+              >
+                再確認
+              </button>
+              <button
+                type="button"
+                onClick={openScreenRecordingSettings}
+                className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors"
+              >
+                設定を開く
+              </button>
+            </div>
+          </div>
+        </div>
 
-      <form
-        className="flex justify-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-          className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 active:bg-blue-800 transition-colors cursor-pointer"
-        >
-          Greet
-        </button>
-      </form>
-      <p className="mt-4 text-lg">{greetMsg}</p>
+        {/* デバッグ情報 */}
+        {debugInfo && (
+          <div className="mb-3 p-2 border border-slate-200 rounded-sm bg-slate-50">
+            <span className="text-xs text-slate-500 font-mono break-all">
+              {debugInfo}
+            </span>
+          </div>
+        )}
 
-      <div className="mt-8 flex flex-col items-center">
+        {/* キャプチャボタン */}
         <button
           type="button"
           onClick={takeScreenshot}
           disabled={isCapturing}
-          className="px-4 py-2 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 active:bg-green-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full mb-3 px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isCapturing ? "Capturing..." : "Take Screenshot"}
+          {isCapturing ? "撮影中..." : "スクリーンショットを撮る"}
         </button>
 
+        {/* スクリーンショット表示 */}
         {screenshotSrc && (
-          <div className="mt-4 max-w-2xl">
+          <div className="border border-slate-200 rounded-sm bg-white p-2">
             <img
               src={screenshotSrc}
-              alt="Screenshot"
-              className="rounded-lg shadow-lg max-w-full h-auto"
+              alt="スクリーンショット"
+              className="w-full h-auto rounded-sm"
             />
           </div>
         )}

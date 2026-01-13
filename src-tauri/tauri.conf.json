@@ -14,11 +14,16 @@
       {
         "title": "auto-daily-report",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "backgroundColor": [248, 250, 252, 255]
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**", "$HOME/Library/Application Support/**", "$PICTURE/**"]
+      }
     }
   },
   "bundle": {

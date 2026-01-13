@@ -3,5 +3,16 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default", "screenshots:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "macos-permissions:default",
+    {
+      "identifier": "shell:allow-open",
+      "allow": [
+        { "path": "^x-apple\\.systempreferences:.*$" },
+        { "path": "^https?://.*$" }
+      ]
+    }
+  ]
 }

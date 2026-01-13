@@ -1,1 +1,42 @@
 @import "tailwindcss";
+
+html,
+body {
+  font-family: "Noto Sans JP", sans-serif;
+  background-color: #f8fafc; /* slate-50 */
+  overscroll-behavior: none;
+  /* ネイティブアプリ風：テキスト選択禁止 */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* 開発モード時はテキスト選択を許可 */
+body.dev-mode,
+body.dev-mode * {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ボタンのカーソル */
+button:not(:disabled) {
+  cursor: default;
+}
+
+/* 画像のドラッグ禁止 */
+img {
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: none;
+}
+
+/* リンクのドラッグ禁止 */
+a {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
