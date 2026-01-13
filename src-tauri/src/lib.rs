@@ -291,7 +291,7 @@ fn get_wifi_ssid() -> Option<String> {
         let client = CWWiFiClient::sharedWiFiClient();
         let interface = client.interface()?;
         let ssid = interface.ssid()?;
-        Some(ssid.to_string())
+        Some(ssid.to_str().to_string())
     }
 }
 
@@ -307,7 +307,7 @@ fn get_wifi_ssid() -> Option<String> {
 fn get_location() -> Option<LocationInfo> {
     unsafe {
         // 位置情報サービスが有効か確認
-        if !CLLocationManager::locationServicesEnabled() {
+        if !CLLocationManager::locationServicesEnabled_class() {
             return None;
         }
 
@@ -315,18 +315,17 @@ fn get_location() -> Option<LocationInfo> {
 
         // 認可状態を確認（macOS 11+）
         let status = manager.authorizationStatus();
-        match status {
-            CLAuthorizationStatus::Authorized | CLAuthorizationStatus::AuthorizedAlways => {
-                // 最後の既知位置を取得（利用可能な場合）
-                if let Some(location) = manager.location() {
-                    let coordinate = location.coordinate();
-                    return Some(LocationInfo {
-                        latitude: coordinate.latitude,
-                        longitude: coordinate.longitude,
-                    });
-                }
+        if status == CLAuthorizationStatus::AuthorizedAlways
+            || status == CLAuthorizationStatus::Authorized
+        {
+            // 最後の既知位置を取得（利用可能な場合）
+            if let Some(location) = manager.location() {
+                let coordinate = location.coordinate();
+                return Some(LocationInfo {
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude,
+                });
             }
-            _ => {}
         }
         None
     }
