@@ -1,6 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   checkScreenRecordingPermission,
   requestScreenRecordingPermission,
@@ -9,7 +9,7 @@ import {
   getScreenshotableMonitors,
   getMonitorScreenshot,
 } from "tauri-plugin-screenshots-api";
-import Settings, { DEFAULT_MODEL, DEFAULT_PROMPT } from "./Settings";
+import Settings, { DEFAULT_MODEL, DEFAULT_PROMPT, DEFAULT_AUTO_CAPTURE_INTERVAL } from "./Settings";
 
 type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
 type Tab = "screenshot" | "settings";
@@ -25,6 +25,14 @@ function App() {
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("screenshot");
   const [hasApiKey, setHasApiKey] = useState(false);
+
+  // 自動撮影用state
+  const [isAutoCapturing, setIsAutoCapturing] = useState(false);
+  const [autoCaptureInterval, setAutoCaptureInterval] = useState(DEFAULT_AUTO_CAPTURE_INTERVAL);
+  const [nextCaptureTime, setNextCaptureTime] = useState<Date | null>(null);
+  const [captureCount, setCaptureCount] = useState(0);
+  const autoCaptureTImerRef = useRef<number | null>(null);
+  const countdownTimerRef = useRef<number | null>(null);
 
   async function checkApiKey() {
     try {
@@ -71,9 +79,35 @@ function App() {
     }
   }
 
+  // 自動撮影間隔を設定から読み込む
+  async function loadAutoCaptureInterval() {
+    try {
+      const store = await load("settings.json");
+      const savedInterval = await store.get<number>("autoCaptureInterval");
+      if (savedInterval) {
+        setAutoCaptureInterval(savedInterval);
+      }
+    } catch (error) {
+      console.error("Failed to load auto capture interval:", error);
+    }
+  }
+
   useEffect(() => {
     checkPermission();
     checkApiKey();
+    loadAutoCaptureInterval();
+  }, []);
+
+  // 自動撮影のクリーンアップ
+  useEffect(() => {
+    return () => {
+      if (autoCaptureTImerRef.current) {
+        clearInterval(autoCaptureTImerRef.current);
+      }
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+      }
+    };
   }, []);
 
   async function takeScreenshot() {
@@ -122,6 +156,92 @@ function App() {
     } finally {
       setIsCapturing(false);
     }
+  }
+
+  // 自動撮影用の内部関数（UIのisCapturingを更新しない）
+  const takeScreenshotForAuto = useCallback(async () => {
+    try {
+      const hasPermission = await checkScreenRecordingPermission();
+      if (!hasPermission) {
+        setDebugInfo("自動撮影: 権限がありません。自動撮影を停止します。");
+        stopAutoCapture();
+        return;
+      }
+
+      const monitors = await getScreenshotableMonitors();
+      if (!monitors || monitors.length === 0) {
+        setDebugInfo("自動撮影: モニターが見つかりません。自動撮影を停止します。");
+        stopAutoCapture();
+        return;
+      }
+
+      const mainMonitor = monitors[0];
+      const tempPath = await getMonitorScreenshot(mainMonitor.id);
+
+      const savedPath = await invoke<string>("process_screenshot", {
+        sourcePath: tempPath,
+      });
+
+      setScreenshotPath(savedPath);
+      const assetUrl = `${convertFileSrc(savedPath)}?t=${Date.now()}`;
+      setScreenshotSrc(assetUrl);
+
+      setCaptureCount((prev) => prev + 1);
+      setDebugInfo(`自動撮影: ${savedPath}`);
+    } catch (error) {
+      setDebugInfo(`自動撮影エラー: ${error}`);
+      console.error("Auto capture failed:", error);
+    }
+  }, []);
+
+  // 自動撮影を開始
+  function startAutoCapture() {
+    if (isAutoCapturing) return;
+
+    // 最初の撮影を即実行
+    takeScreenshotForAuto();
+    setCaptureCount(1);
+
+    // 次回撮影時刻を設定
+    const nextTime = new Date(Date.now() + autoCaptureInterval * 1000);
+    setNextCaptureTime(nextTime);
+
+    // 撮影タイマーを設定
+    autoCaptureTImerRef.current = window.setInterval(() => {
+      takeScreenshotForAuto();
+      setCaptureCount((prev) => prev + 1);
+      setNextCaptureTime(new Date(Date.now() + autoCaptureInterval * 1000));
+    }, autoCaptureInterval * 1000);
+
+    // カウントダウン更新用タイマー（1秒ごと）
+    countdownTimerRef.current = window.setInterval(() => {
+      setNextCaptureTime((prev) => prev ? new Date(prev.getTime()) : null);
+    }, 1000);
+
+    setIsAutoCapturing(true);
+    setDebugInfo(`自動撮影を開始しました（${autoCaptureInterval}秒間隔）`);
+  }
+
+  // 自動撮影を停止
+  function stopAutoCapture() {
+    if (autoCaptureTImerRef.current) {
+      clearInterval(autoCaptureTImerRef.current);
+      autoCaptureTImerRef.current = null;
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setIsAutoCapturing(false);
+    setNextCaptureTime(null);
+    setDebugInfo("自動撮影を停止しました");
+  }
+
+  // 次回撮影までの残り秒数を計算
+  function getRemainingSeconds(): number {
+    if (!nextCaptureTime) return 0;
+    const remaining = Math.max(0, Math.ceil((nextCaptureTime.getTime() - Date.now()) / 1000));
+    return remaining;
   }
 
   async function analyzeWithAI() {
@@ -262,11 +382,47 @@ function App() {
             <button
               type="button"
               onClick={takeScreenshot}
-              disabled={isCapturing}
+              disabled={isCapturing || isAutoCapturing}
               className="w-full mb-3 px-4 py-2.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isCapturing ? "撮影中..." : "スクリーンショットを撮る"}
             </button>
+
+            {/* 自動撮影コントロール */}
+            <div className="mb-3 p-3 border border-slate-200 rounded-sm bg-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-slate-700">自動撮影</span>
+                  {isAutoCapturing && (
+                    <>
+                      <span className="px-2 py-0.5 text-xs rounded-sm border border-slate-400 bg-slate-100 text-slate-700">
+                        {captureCount}枚撮影済み
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        次回まで {getRemainingSeconds()}秒
+                      </span>
+                    </>
+                  )}
+                  {!isAutoCapturing && (
+                    <span className="text-xs text-slate-500">
+                      {autoCaptureInterval}秒間隔
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={isAutoCapturing ? stopAutoCapture : startAutoCapture}
+                  disabled={permissionStatus !== "granted"}
+                  className={`px-3 py-1.5 text-sm border rounded-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isAutoCapturing
+                      ? "border-slate-300 bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700"
+                      : "border-slate-400 bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white"
+                  }`}
+                >
+                  {isAutoCapturing ? "停止" : "開始"}
+                </button>
+              </div>
+            </div>
 
             {/* AI分析ボタン */}
             {screenshotPath && (
