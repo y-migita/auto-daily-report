@@ -281,16 +281,29 @@ fn update_tray_tooltip(tooltip: String, tray_state: State<TrayState>) -> Result<
 // ==================== Context Info (WiFi/Location) ====================
 
 /// コンテキスト情報（WiFi SSID、位置情報）
-#[derive(Default, serde::Serialize)]
+#[derive(Default, Clone, serde::Serialize)]
 struct ContextInfo {
     wifi_ssid: Option<String>,
     location: Option<LocationInfo>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 struct LocationInfo {
     latitude: f64,
     longitude: f64,
+}
+
+/// 分析結果のJSON構造（画像と同じフォルダに保存）
+#[derive(serde::Serialize)]
+struct AnalysisResult {
+    /// 分析日時（ISO 8601形式）
+    timestamp: String,
+    /// 使用したAIモデル
+    model: String,
+    /// コンテキスト情報
+    context: ContextInfo,
+    /// AI分析結果テキスト
+    analysis: String,
 }
 
 /// 現在接続中のWiFi SSIDを取得（macOS）
@@ -508,6 +521,19 @@ async fn analyze_screenshot(
         .and_then(|c| c.into_iter().next())
         .and_then(|c| c.message.content)
         .ok_or("AIからテキストが返されませんでした")?;
+
+    // 分析結果をJSONファイルに保存（画像と同じフォルダ、同じファイル名で拡張子を.jsonに）
+    let json_path = validated_path.with_extension("json");
+    let analysis_result = AnalysisResult {
+        timestamp: Local::now().to_rfc3339(),
+        model: model.clone(),
+        context: context_info,
+        analysis: text.clone(),
+    };
+    let json_content = serde_json::to_string_pretty(&analysis_result)
+        .map_err(|e| format!("JSONシリアライズエラー: {}", e))?;
+    fs::write(&json_path, json_content)
+        .map_err(|e| format!("JSON保存エラー: {}", e))?;
 
     Ok(text)
 }
