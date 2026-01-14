@@ -48,6 +48,8 @@ function App() {
   const isStoppingRef = useRef(false);
   const nextCaptureTimeRef = useRef<Date | null>(null);
   const isCapturingRef = useRef(false);
+  // 最新のtakeScreenshotForAuto関数への参照を保持（setInterval内で使用）
+  const takeScreenshotForAutoRef = useRef<(() => Promise<void>) | null>(null);
 
   // トレーアイコン更新用関数
   const updateTrayTitle = useCallback(async (title: string) => {
@@ -300,6 +302,12 @@ function App() {
     }
   }, [updateTrayTitle, autoAnalyze, hasApiKey, runAIAnalysis]);
 
+  // takeScreenshotForAutoの最新バージョンをrefに保持
+  // setInterval内からは常にrefを経由して呼び出すことで、最新のautoAnalyze/hasApiKey値が使われる
+  useEffect(() => {
+    takeScreenshotForAutoRef.current = takeScreenshotForAuto;
+  }, [takeScreenshotForAuto]);
+
   // 自動撮影を開始
   async function startAutoCapture() {
     if (isAutoCapturing) return;
@@ -310,8 +318,8 @@ function App() {
     // ツールチップを更新
     await updateTrayTooltip(`自動撮影中（${autoCaptureInterval}秒間隔）`);
 
-    // 最初の撮影を即実行
-    takeScreenshotForAuto();
+    // 最初の撮影を即実行（ref経由で最新の関数を呼び出す）
+    takeScreenshotForAutoRef.current?.();
     setCaptureCount(1);
 
     // 次回撮影時刻を設定
@@ -319,11 +327,11 @@ function App() {
     nextCaptureTimeRef.current = nextTime;
     setRemainingSeconds(autoCaptureInterval);
 
-    // 撮影タイマーを設定
+    // 撮影タイマーを設定（ref経由で最新の関数を呼び出す）
     autoCaptureTimerRef.current = window.setInterval(() => {
       const newNextTime = new Date(Date.now() + autoCaptureInterval * 1000);
       nextCaptureTimeRef.current = newNextTime;
-      takeScreenshotForAuto();
+      takeScreenshotForAutoRef.current?.();
       setCaptureCount((prev) => prev + 1);
     }, autoCaptureInterval * 1000);
 
