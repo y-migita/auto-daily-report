@@ -248,8 +248,10 @@ function App() {
     isCapturingRef.current = true;
 
     try {
-      // 撮影中のステータスをトレーアイコンに表示
-      await updateTrayTitle("📷");
+      // 停止中でなければ撮影中のステータスをトレーアイコンに表示
+      if (!isStoppingRef.current) {
+        await updateTrayTitle("📷");
+      }
 
       const hasPermission = await checkScreenRecordingPermission();
       if (!hasPermission) {
@@ -281,8 +283,10 @@ function App() {
       // 自動AI分析が有効かつAPIキーがある場合、バックグラウンドで分析を実行
       if (autoAnalyze && hasApiKey) {
         setDebugInfo(`自動撮影・分析中: ${savedPath}`);
-        // トレーアイコンを分析中表示に
-        await updateTrayTitle("🤖");
+        // 停止中でなければトレーアイコンを分析中表示に
+        if (!isStoppingRef.current) {
+          await updateTrayTitle("🤖");
+        }
         const result = await runAIAnalysis(savedPath);
         if (result) {
           setAnalysisResult(result);
