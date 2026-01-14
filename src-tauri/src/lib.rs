@@ -43,6 +43,66 @@ fn open_screen_recording_settings() -> Result<(), String> {
     Ok(())
 }
 
+/// 位置情報サービスの設定画面を開く
+#[tauri::command]
+fn open_location_settings() -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices")
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 位置情報権限の状態を確認
+/// 返り値: "authorized", "denied", "notDetermined", "restricted", "unknown"
+#[tauri::command]
+fn check_location_permission() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe {
+            // 位置情報サービス自体が無効の場合
+            if !CLLocationManager::locationServicesEnabled_class() {
+                return "disabled".to_string();
+            }
+
+            let manager = CLLocationManager::new();
+            let status = manager.authorizationStatus();
+
+            match status {
+                CLAuthorizationStatus::AuthorizedAlways => "authorized".to_string(),
+                CLAuthorizationStatus::AuthorizedWhenInUse => "authorized".to_string(),
+                CLAuthorizationStatus::Denied => "denied".to_string(),
+                CLAuthorizationStatus::NotDetermined => "notDetermined".to_string(),
+                CLAuthorizationStatus::Restricted => "restricted".to_string(),
+                _ => "unknown".to_string(),
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "unsupported".to_string()
+    }
+}
+
+/// 位置情報権限を要求
+/// macOSでは権限要求ダイアログが表示される
+#[tauri::command]
+fn request_location_permission() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe {
+            let manager = CLLocationManager::new();
+            // macOSでは requestWhenInUseAuthorization を呼び出すとシステムダイアログが表示される
+            manager.requestWhenInUseAuthorization();
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("この機能はmacOSでのみ利用可能です".to_string())
+    }
+}
+
 /// ソースパスが許可されたディレクトリ内かどうかを検証する
 /// 許可されるディレクトリ:
 /// - システムの一時ディレクトリ (std::env::temp_dir)
@@ -550,6 +610,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             open_screen_recording_settings,
+            open_location_settings,
+            check_location_permission,
+            request_location_permission,
             process_screenshot,
             set_vercel_api_key,
             has_vercel_api_key,
