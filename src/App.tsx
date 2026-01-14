@@ -17,6 +17,7 @@ import Settings, {
 } from "./Settings";
 
 type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
+type LocationPermissionStatus = "checking" | "authorized" | "denied" | "notDetermined" | "restricted" | "disabled" | "unknown";
 type Tab = "capture" | "settings";
 
 function App() {
@@ -26,6 +27,8 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [permissionStatus, setPermissionStatus] =
     useState<PermissionStatus>("checking");
+  const [locationPermissionStatus, setLocationPermissionStatus] =
+    useState<LocationPermissionStatus>("checking");
   const [debugInfo, setDebugInfo] = useState<string>("");
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("capture");
@@ -92,6 +95,16 @@ function App() {
     }
   }
 
+  async function checkLocationPermission(): Promise<void> {
+    setLocationPermissionStatus("checking");
+    try {
+      const status = await invoke<string>("check_location_permission");
+      setLocationPermissionStatus(status as LocationPermissionStatus);
+    } catch {
+      setLocationPermissionStatus("unknown");
+    }
+  }
+
   async function openScreenRecordingSettings() {
     try {
       await invoke("open_screen_recording_settings");
@@ -116,6 +129,7 @@ function App() {
 
   useEffect(() => {
     checkPermission();
+    checkLocationPermission();
     checkApiKey();
     loadAutoCaptureInterval();
   }, []);
@@ -375,7 +389,7 @@ function App() {
             {/* 左カラム: コントロール */}
             <div className="w-80 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
               {/* ステータス表示 */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge
                   variant={
                     permissionStatus === "granted"
@@ -386,12 +400,33 @@ function App() {
                   }
                 >
                   {permissionStatus === "granted"
-                    ? "権限: 許可済み"
+                    ? "画面収録: OK"
                     : permissionStatus === "denied"
-                      ? "権限: 拒否"
+                      ? "画面収録: 拒否"
                       : permissionStatus === "checking"
-                        ? "権限: 確認中"
-                        : "権限: 不明"}
+                        ? "画面収録: 確認中"
+                        : "画面収録: 不明"}
+                </Badge>
+                <Badge
+                  variant={
+                    locationPermissionStatus === "authorized"
+                      ? "default"
+                      : locationPermissionStatus === "denied" || locationPermissionStatus === "restricted" || locationPermissionStatus === "disabled"
+                        ? "warning"
+                        : "muted"
+                  }
+                >
+                  {locationPermissionStatus === "authorized"
+                    ? "位置情報: OK"
+                    : locationPermissionStatus === "denied"
+                      ? "位置情報: 拒否"
+                      : locationPermissionStatus === "notDetermined"
+                        ? "位置情報: 未設定"
+                        : locationPermissionStatus === "disabled"
+                          ? "位置情報: 無効"
+                          : locationPermissionStatus === "checking"
+                            ? "位置情報: 確認中"
+                            : "位置情報: 不明"}
                 </Badge>
                 {!hasApiKey && <Badge variant="warning">APIキー未設定</Badge>}
               </div>

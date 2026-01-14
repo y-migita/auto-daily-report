@@ -22,6 +22,7 @@ const AVAILABLE_MODELS = [
 ];
 
 type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
+type LocationPermissionStatus = "checking" | "authorized" | "denied" | "notDetermined" | "restricted" | "disabled" | "unknown";
 
 interface SettingsProps {
   onSettingsChange?: () => void;
@@ -39,10 +40,12 @@ function Settings({ onSettingsChange }: SettingsProps) {
     text: string;
   } | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>("checking");
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState<LocationPermissionStatus>("checking");
 
   useEffect(() => {
     loadSettings();
     checkPermission();
+    checkLocationPermission();
   }, []);
 
   async function checkPermission(): Promise<boolean> {
@@ -71,6 +74,36 @@ function Settings({ onSettingsChange }: SettingsProps) {
       await openScreenRecordingSettings();
     } catch (e) {
       console.error("Failed to request permission:", e);
+    }
+  }
+
+  async function checkLocationPermission(): Promise<void> {
+    setLocationPermissionStatus("checking");
+    try {
+      const status = await invoke<string>("check_location_permission");
+      setLocationPermissionStatus(status as LocationPermissionStatus);
+    } catch {
+      setLocationPermissionStatus("unknown");
+    }
+  }
+
+  async function handleRequestLocationPermission() {
+    try {
+      await invoke("request_location_permission");
+      // 権限ダイアログが表示されるので、少し待ってから再確認
+      setTimeout(() => {
+        checkLocationPermission();
+      }, 1000);
+    } catch (e) {
+      console.error("Failed to request location permission:", e);
+    }
+  }
+
+  async function openLocationSettings() {
+    try {
+      await invoke("open_location_settings");
+    } catch (e) {
+      console.error("Failed to open location settings:", e);
     }
   }
 
@@ -225,6 +258,69 @@ function Settings({ onSettingsChange }: SettingsProps) {
               <button
                 type="button"
                 onClick={openScreenRecordingSettings}
+                className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors"
+              >
+                システム設定を開く
+              </button>
+            </div>
+          </div>
+
+          {/* 位置情報・WiFiの権限 */}
+          <div className="p-3 border border-slate-200 rounded-sm bg-white">
+            <h2 className="text-sm font-bold text-slate-700 mb-2">
+              位置情報・WiFiの権限
+            </h2>
+            <p className="text-xs text-slate-500 mb-2">
+              WiFi情報と位置情報を日報に追加するには、位置情報サービスの権限が必要です。
+              <br />
+              <span className="text-slate-400">（macOS 14以降、WiFi SSID取得にも位置情報権限が必要）</span>
+            </p>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm text-slate-600">ステータス:</span>
+              <Badge
+                variant={
+                  locationPermissionStatus === "authorized"
+                    ? "default"
+                    : locationPermissionStatus === "denied" || locationPermissionStatus === "restricted" || locationPermissionStatus === "disabled"
+                      ? "warning"
+                      : "muted"
+                }
+              >
+                {locationPermissionStatus === "authorized"
+                  ? "許可済み"
+                  : locationPermissionStatus === "denied"
+                    ? "拒否"
+                    : locationPermissionStatus === "notDetermined"
+                      ? "未設定"
+                      : locationPermissionStatus === "restricted"
+                        ? "制限あり"
+                        : locationPermissionStatus === "disabled"
+                          ? "無効"
+                          : locationPermissionStatus === "checking"
+                            ? "確認中"
+                            : "不明"}
+              </Badge>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={checkLocationPermission}
+                className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors"
+              >
+                再確認
+              </button>
+              {(locationPermissionStatus === "notDetermined" || locationPermissionStatus === "denied") && (
+                <button
+                  type="button"
+                  onClick={handleRequestLocationPermission}
+                  className="px-3 py-1.5 text-sm border border-slate-400 rounded-sm bg-slate-600 hover:bg-slate-700 active:bg-slate-800 text-white font-bold transition-colors"
+                >
+                  権限を要求
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={openLocationSettings}
                 className="px-3 py-1.5 text-sm border border-slate-300 rounded-sm bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-700 transition-colors"
               >
                 システム設定を開く
