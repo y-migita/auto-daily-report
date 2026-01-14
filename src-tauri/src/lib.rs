@@ -2,6 +2,7 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
@@ -28,14 +29,13 @@ const TRAY_ID: &str = "main-tray";
 // トレータイトル更新用のシーケンス番号（レースコンディション対策）
 static TRAY_TITLE_SEQ: AtomicU64 = AtomicU64::new(0);
 
+// トレータイトル操作用のMutex（シーケンスチェックとset_titleをアトミックに）
+// Rust 1.80以降で安定化されたstd::sync::LazyLockを使用
+static TRAY_TITLE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
 // Keychain constants
 const SERVICE: &str = "com.y-migita.pasha-log";
 const ACCOUNT: &str = "VERCEL_API_KEY";
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 #[tauri::command]
 fn open_screen_recording_settings() -> Result<(), String> {
@@ -319,8 +319,14 @@ fn get_tray(app: &AppHandle) -> Result<tauri::tray::TrayIcon, String> {
 
 /// トレーアイコンのタイトルを更新（macOSではアイコンの横にテキスト表示）
 /// seq: フロントエンドから渡されるシーケンス番号。古い番号の更新は無視される。
+/// Mutexで保護し、シーケンスチェックとset_titleをアトミックに実行
 #[tauri::command]
 fn update_tray_title(app: AppHandle, title: String, seq: u64) -> Result<(), String> {
+    // Mutexを取得して排他制御
+    let _lock = TRAY_TITLE_LOCK
+        .lock()
+        .map_err(|e| format!("Mutexの取得に失敗: {}", e))?;
+
     // 現在のシーケンス番号を取得し、渡された番号が古い場合は無視
     let current_seq = TRAY_TITLE_SEQ.load(Ordering::SeqCst);
     if seq < current_seq {
@@ -336,8 +342,14 @@ fn update_tray_title(app: AppHandle, title: String, seq: u64) -> Result<(), Stri
 /// トレーアイコンのタイトルをクリア
 /// シーケンス番号をインクリメントし、進行中の古い更新リクエストを無効化
 /// 新しいシーケンス番号を返す（フロントエンドで使用）
+/// Mutexで保護し、シーケンス更新とset_titleをアトミックに実行
 #[tauri::command]
 fn clear_tray_title(app: AppHandle) -> Result<u64, String> {
+    // Mutexを取得して排他制御
+    let _lock = TRAY_TITLE_LOCK
+        .lock()
+        .map_err(|e| format!("Mutexの取得に失敗: {}", e))?;
+
     // シーケンス番号をインクリメントして、古い更新を無効化
     let new_seq = TRAY_TITLE_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -626,7 +638,6 @@ pub fn run() {
         .plugin(tauri_plugin_screenshots::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            greet,
             open_screen_recording_settings,
             open_location_settings,
             check_location_permission,
