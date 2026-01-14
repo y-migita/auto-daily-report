@@ -6,11 +6,15 @@ import {
   requestScreenRecordingPermission,
 } from "tauri-plugin-macos-permissions-api";
 import {
-  getScreenshotableMonitors,
   getMonitorScreenshot,
+  getScreenshotableMonitors,
 } from "tauri-plugin-screenshots-api";
-import Settings, { DEFAULT_MODEL, DEFAULT_PROMPT, DEFAULT_AUTO_CAPTURE_INTERVAL } from "./Settings";
 import { Badge } from "./components/Badge";
+import Settings, {
+  DEFAULT_AUTO_CAPTURE_INTERVAL,
+  DEFAULT_MODEL,
+  DEFAULT_PROMPT,
+} from "./Settings";
 
 type PermissionStatus = "checking" | "granted" | "denied" | "unknown";
 type Tab = "capture" | "settings";
@@ -29,12 +33,16 @@ function App() {
 
   // 自動撮影用state
   const [isAutoCapturing, setIsAutoCapturing] = useState(false);
-  const [autoCaptureInterval, setAutoCaptureInterval] = useState(DEFAULT_AUTO_CAPTURE_INTERVAL);
-  const [nextCaptureTime, setNextCaptureTime] = useState<Date | null>(null);
+  const [autoCaptureInterval, setAutoCaptureInterval] = useState(
+    DEFAULT_AUTO_CAPTURE_INTERVAL,
+  );
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [captureCount, setCaptureCount] = useState(0);
   const autoCaptureTimerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
+  const nextCaptureTimeRef = useRef<Date | null>(null);
+  const isCapturingRef = useRef(false);
 
   // トレーアイコン更新用関数
   const updateTrayTitle = useCallback(async (title: string) => {
@@ -134,7 +142,7 @@ function App() {
       const hasPermission = await checkScreenRecordingPermission();
       if (!hasPermission) {
         setDebugInfo(
-          "Screen recording permission denied. Please enable in System Settings."
+          "Screen recording permission denied. Please enable in System Settings.",
         );
         setPermissionStatus("denied");
         await requestScreenRecordingPermission();
@@ -146,7 +154,7 @@ function App() {
       const monitors = await getScreenshotableMonitors();
       if (!monitors || monitors.length === 0) {
         setDebugInfo(
-          "No monitors found. This typically means screen recording permission is not granted."
+          "No monitors found. This typically means screen recording permission is not granted.",
         );
         setPermissionStatus("denied");
         return;
@@ -176,9 +184,12 @@ function App() {
 
   // 自動撮影用の内部関数（UIのisCapturingを更新しない）
   const takeScreenshotForAuto = useCallback(async () => {
+    // 撮影中フラグを設定（トレーアイコンの更新用）
+    isCapturingRef.current = true;
+
     try {
       // 撮影中のステータスをトレーアイコンに表示
-      await updateTrayTitle("撮影中");
+      await updateTrayTitle("📷");
 
       const hasPermission = await checkScreenRecordingPermission();
       if (!hasPermission) {
@@ -189,7 +200,9 @@ function App() {
 
       const monitors = await getScreenshotableMonitors();
       if (!monitors || monitors.length === 0) {
-        setDebugInfo("自動撮影: モニターが見つかりません。自動撮影を停止します。");
+        setDebugInfo(
+          "自動撮影: モニターが見つかりません。自動撮影を停止します。",
+        );
         stopAutoCapture();
         return;
       }
@@ -209,6 +222,9 @@ function App() {
     } catch (error) {
       setDebugInfo(`自動撮影エラー: ${error}`);
       console.error("Auto capture failed:", error);
+    } finally {
+      // 撮影完了フラグをリセット
+      isCapturingRef.current = false;
     }
   }, [updateTrayTitle]);
 
@@ -228,28 +244,36 @@ function App() {
 
     // 次回撮影時刻を設定
     const nextTime = new Date(Date.now() + autoCaptureInterval * 1000);
-    setNextCaptureTime(nextTime);
+    nextCaptureTimeRef.current = nextTime;
+    setRemainingSeconds(autoCaptureInterval);
 
     // 撮影タイマーを設定
     autoCaptureTimerRef.current = window.setInterval(() => {
+      const newNextTime = new Date(Date.now() + autoCaptureInterval * 1000);
+      nextCaptureTimeRef.current = newNextTime;
       takeScreenshotForAuto();
       setCaptureCount((prev) => prev + 1);
-      setNextCaptureTime(new Date(Date.now() + autoCaptureInterval * 1000));
     }, autoCaptureInterval * 1000);
 
     // カウントダウン更新用タイマー（1秒ごと）- トレーアイコンも同時更新
+    // 目標時刻から計算するため、setIntervalのドリフトに影響されない
     countdownTimerRef.current = window.setInterval(() => {
       // 停止フラグが立っている場合はトレーアイコンを更新しない
       if (isStoppingRef.current) return;
 
-      setNextCaptureTime((prev) => {
-        if (prev) {
-          const remaining = Math.max(0, Math.ceil((prev.getTime() - Date.now()) / 1000));
-          // 残り時間をトレーアイコンに表示
-          updateTrayTitle(`${remaining}秒`);
-        }
-        return prev ? new Date(prev.getTime()) : null;
-      });
+      const targetTime = nextCaptureTimeRef.current;
+      if (!targetTime) return;
+
+      const remaining = Math.max(
+        0,
+        Math.ceil((targetTime.getTime() - Date.now()) / 1000),
+      );
+      setRemainingSeconds(remaining);
+
+      // 撮影中でなければ残り時間をトレーアイコンに表示
+      if (!isCapturingRef.current) {
+        updateTrayTitle(`${remaining}秒`);
+      }
     }, 1000);
 
     setIsAutoCapturing(true);
@@ -270,19 +294,13 @@ function App() {
       countdownTimerRef.current = null;
     }
     setIsAutoCapturing(false);
-    setNextCaptureTime(null);
+    nextCaptureTimeRef.current = null;
+    setRemainingSeconds(0);
     setDebugInfo("自動撮影を停止しました");
 
     // トレーアイコンをリセット
     await clearTrayTitle();
     await updateTrayTooltip("ぱしゃログ");
-  }
-
-  // 次回撮影までの残り秒数を計算
-  function getRemainingSeconds(): number {
-    if (!nextCaptureTime) return 0;
-    const remaining = Math.max(0, Math.ceil((nextCaptureTime.getTime() - Date.now()) / 1000));
-    return remaining;
   }
 
   async function analyzeWithAI() {
@@ -400,10 +418,14 @@ function App() {
               {/* 自動撮影コントロール */}
               <div className="p-3 border border-slate-200 rounded-sm bg-white">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold text-slate-700">自動撮影</span>
+                  <span className="text-sm font-bold text-slate-700">
+                    自動撮影
+                  </span>
                   <button
                     type="button"
-                    onClick={isAutoCapturing ? stopAutoCapture : startAutoCapture}
+                    onClick={
+                      isAutoCapturing ? stopAutoCapture : startAutoCapture
+                    }
                     disabled={permissionStatus !== "granted"}
                     className={`px-3 py-1.5 text-sm border rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       isAutoCapturing
@@ -419,7 +441,7 @@ function App() {
                     <>
                       <Badge>{captureCount}枚撮影済み</Badge>
                       <span className="text-xs text-slate-500">
-                        次回まで {getRemainingSeconds()}秒
+                        次回まで {remainingSeconds}秒
                       </span>
                     </>
                   ) : (
@@ -471,7 +493,9 @@ function App() {
                 </div>
               ) : (
                 <div className="h-full border border-slate-200 rounded-sm bg-white flex items-center justify-center">
-                  <span className="text-sm text-slate-400">スクリーンショットがここに表示されます</span>
+                  <span className="text-sm text-slate-400">
+                    スクリーンショットがここに表示されます
+                  </span>
                 </div>
               )}
             </div>
