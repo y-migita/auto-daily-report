@@ -370,6 +370,8 @@ function App() {
     setRemainingSeconds(0);
     setDebugInfo("自動撮影を停止しました");
 
+    // 進行中のupdateTrayTitleの非同期処理が完了するのを待ってからクリア
+    await new Promise((resolve) => setTimeout(resolve, 100));
     // トレーアイコンをリセット
     await clearTrayTitle();
     await updateTrayTooltip("ぱしゃログ");
