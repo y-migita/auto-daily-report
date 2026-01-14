@@ -38,11 +38,6 @@ const SERVICE: &str = "com.y-migita.pasha-log";
 const ACCOUNT: &str = "VERCEL_API_KEY";
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 fn open_screen_recording_settings() -> Result<(), String> {
     std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
@@ -643,7 +638,6 @@ pub fn run() {
         .plugin(tauri_plugin_screenshots::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            greet,
             open_screen_recording_settings,
             open_location_settings,
             check_location_permission,
