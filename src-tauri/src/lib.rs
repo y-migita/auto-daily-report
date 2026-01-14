@@ -306,32 +306,35 @@ fn get_vercel_api_key() -> Result<String, String> {
 
 // ==================== Tray Icon Commands ====================
 
+/// トレーアイコンを取得するヘルパー関数
+/// トレーが見つからない場合はエラーを返す
+fn get_tray(app: &AppHandle) -> Result<tauri::tray::TrayIcon, String> {
+    app.tray_by_id(TRAY_ID)
+        .ok_or_else(|| format!("トレーアイコン '{}' が見つかりません", TRAY_ID))
+}
+
 /// トレーアイコンのタイトルを更新（macOSではアイコンの横にテキスト表示）
 #[tauri::command]
 fn update_tray_title(app: AppHandle, title: String) -> Result<(), String> {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        tray.set_title(Some(&title)).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    let tray = get_tray(&app)?;
+    tray.set_title(Some(&title))
+        .map_err(|e| format!("トレータイトルの更新に失敗: {}", e))
 }
 
 /// トレーアイコンのタイトルをクリア
 #[tauri::command]
 fn clear_tray_title(app: AppHandle) -> Result<(), String> {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        tray.set_title(None::<&str>).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    let tray = get_tray(&app)?;
+    tray.set_title(None::<&str>)
+        .map_err(|e| format!("トレータイトルのクリアに失敗: {}", e))
 }
 
 /// トレーアイコンのツールチップを更新
 #[tauri::command]
 fn update_tray_tooltip(app: AppHandle, tooltip: String) -> Result<(), String> {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        tray.set_tooltip(Some(&tooltip))
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    let tray = get_tray(&app)?;
+    tray.set_tooltip(Some(&tooltip))
+        .map_err(|e| format!("ツールチップの更新に失敗: {}", e))
 }
 
 // ==================== Context Info (WiFi/Location) ====================
