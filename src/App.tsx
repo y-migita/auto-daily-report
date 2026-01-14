@@ -355,7 +355,8 @@ function App() {
       setRemainingSeconds(remaining);
 
       // 撮影中でなければ残り時間をトレーアイコンに表示
-      if (!isCapturingRef.current) {
+      // updateTrayTitle呼び出し直前に再度停止フラグをチェック（レースコンディション対策）
+      if (!isCapturingRef.current && !isStoppingRef.current) {
         updateTrayTitle(`${remaining}秒`);
       }
     }, 1000);
@@ -382,11 +383,14 @@ function App() {
     setRemainingSeconds(0);
     setDebugInfo("自動撮影を停止しました");
 
-    // 進行中のupdateTrayTitleの非同期処理が完了するのを待ってからクリア
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    // トレーアイコンをリセット
+    // トレーアイコンを即座にクリア
     await clearTrayTitle();
     await updateTrayTooltip("ぱしゃログ");
+
+    // 進行中のupdateTrayTitleの非同期処理が完了するのを待ってから再度クリア
+    // （レースコンディションで上書きされた場合の対策）
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await clearTrayTitle();
   }
 
   async function analyzeWithAI() {
