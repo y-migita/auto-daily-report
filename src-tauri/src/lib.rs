@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
@@ -23,6 +24,9 @@ use objc2_core_wlan::CWWiFiClient;
 
 // トレーアイコンのID
 const TRAY_ID: &str = "main-tray";
+
+// トレータイトル更新用のシーケンス番号（レースコンディション対策）
+static TRAY_TITLE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 // Keychain constants
 const SERVICE: &str = "com.y-migita.pasha-log";
@@ -314,19 +318,34 @@ fn get_tray(app: &AppHandle) -> Result<tauri::tray::TrayIcon, String> {
 }
 
 /// トレーアイコンのタイトルを更新（macOSではアイコンの横にテキスト表示）
+/// seq: フロントエンドから渡されるシーケンス番号。古い番号の更新は無視される。
 #[tauri::command]
-fn update_tray_title(app: AppHandle, title: String) -> Result<(), String> {
+fn update_tray_title(app: AppHandle, title: String, seq: u64) -> Result<(), String> {
+    // 現在のシーケンス番号を取得し、渡された番号が古い場合は無視
+    let current_seq = TRAY_TITLE_SEQ.load(Ordering::SeqCst);
+    if seq < current_seq {
+        // 古い更新リクエストは無視（レースコンディション対策）
+        return Ok(());
+    }
+
     let tray = get_tray(&app)?;
     tray.set_title(Some(&title))
         .map_err(|e| format!("トレータイトルの更新に失敗: {}", e))
 }
 
 /// トレーアイコンのタイトルをクリア
+/// シーケンス番号をインクリメントし、進行中の古い更新リクエストを無効化
+/// 新しいシーケンス番号を返す（フロントエンドで使用）
 #[tauri::command]
-fn clear_tray_title(app: AppHandle) -> Result<(), String> {
+fn clear_tray_title(app: AppHandle) -> Result<u64, String> {
+    // シーケンス番号をインクリメントして、古い更新を無効化
+    let new_seq = TRAY_TITLE_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+
     let tray = get_tray(&app)?;
     tray.set_title(None::<&str>)
-        .map_err(|e| format!("トレータイトルのクリアに失敗: {}", e))
+        .map_err(|e| format!("トレータイトルのクリアに失敗: {}", e))?;
+
+    Ok(new_seq)
 }
 
 /// トレーアイコンのツールチップを更新
