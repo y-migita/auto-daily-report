@@ -1,7 +1,6 @@
 use std::fs::{self, File};
 use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
@@ -11,8 +10,8 @@ use image::GenericImageView;
 use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{TrayIcon, TrayIconBuilder},
-    Manager, State,
+    tray::TrayIconBuilder,
+    AppHandle, Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
@@ -22,8 +21,8 @@ use objc2_core_location::{CLAuthorizationStatus, CLLocationManager};
 #[cfg(target_os = "macos")]
 use objc2_core_wlan::CWWiFiClient;
 
-// トレーアイコンの状態管理
-struct TrayState(Mutex<Option<TrayIcon>>);
+// トレーアイコンのID
+const TRAY_ID: &str = "main-tray";
 
 // Keychain constants
 const SERVICE: &str = "com.y-migita.pasha-log";
@@ -309,9 +308,8 @@ fn get_vercel_api_key() -> Result<String, String> {
 
 /// トレーアイコンのタイトルを更新（macOSではアイコンの横にテキスト表示）
 #[tauri::command]
-fn update_tray_title(title: String, tray_state: State<TrayState>) -> Result<(), String> {
-    let tray_guard = tray_state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(tray) = tray_guard.as_ref() {
+fn update_tray_title(app: AppHandle, title: String) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
         tray.set_title(Some(&title)).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -319,9 +317,8 @@ fn update_tray_title(title: String, tray_state: State<TrayState>) -> Result<(), 
 
 /// トレーアイコンのタイトルをクリア
 #[tauri::command]
-fn clear_tray_title(tray_state: State<TrayState>) -> Result<(), String> {
-    let tray_guard = tray_state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(tray) = tray_guard.as_ref() {
+fn clear_tray_title(app: AppHandle) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
         tray.set_title(None::<&str>).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -329,9 +326,8 @@ fn clear_tray_title(tray_state: State<TrayState>) -> Result<(), String> {
 
 /// トレーアイコンのツールチップを更新
 #[tauri::command]
-fn update_tray_tooltip(tooltip: String, tray_state: State<TrayState>) -> Result<(), String> {
-    let tray_guard = tray_state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(tray) = tray_guard.as_ref() {
+fn update_tray_tooltip(app: AppHandle, tooltip: String) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
         tray.set_tooltip(Some(&tooltip))
             .map_err(|e| e.to_string())?;
     }
@@ -622,7 +618,6 @@ pub fn run() {
             clear_tray_title,
             update_tray_tooltip
         ])
-        .manage(TrayState(Mutex::new(None)))
         .setup(|app| {
             // macOSでDockアイコンを非表示にしてメニューバーのみに表示
             #[cfg(target_os = "macos")]
@@ -635,8 +630,8 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &open_folder, &quit])?;
 
-            // システムトレイを作成
-            let tray_icon = TrayIconBuilder::new()
+            // システムトレイを作成（IDを指定してapp.tray_by_id()で取得可能に）
+            TrayIconBuilder::with_id(TRAY_ID)
                 .icon(app.default_window_icon().unwrap().clone())
                 .icon_as_template(true)
                 .menu(&menu)
@@ -688,12 +683,6 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
-
-            // トレーアイコンを状態に保存（後から更新できるように）
-            let tray_state = app.state::<TrayState>();
-            if let Ok(mut tray_guard) = tray_state.0.lock() {
-                *tray_guard = Some(tray_icon);
-            }
 
             Ok(())
         })
