@@ -11,6 +11,7 @@ import {
 } from "tauri-plugin-screenshots-api";
 import { Badge } from "./components/Badge";
 import Settings, {
+  DEFAULT_AUTO_ANALYZE,
   DEFAULT_AUTO_CAPTURE_INTERVAL,
   DEFAULT_MODEL,
   DEFAULT_PROMPT,
@@ -39,6 +40,7 @@ function App() {
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(
     DEFAULT_AUTO_CAPTURE_INTERVAL,
   );
+  const [autoAnalyze, setAutoAnalyze] = useState(DEFAULT_AUTO_ANALYZE);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [captureCount, setCaptureCount] = useState(0);
   const autoCaptureTimerRef = useRef<number | null>(null);
@@ -114,16 +116,20 @@ function App() {
     }
   }
 
-  // 自動撮影間隔を設定から読み込む
-  async function loadAutoCaptureInterval() {
+  // 自動撮影設定を読み込む
+  async function loadAutoCaptureSettings() {
     try {
       const store = await load("settings.json");
       const savedInterval = await store.get<number>("autoCaptureInterval");
+      const savedAutoAnalyze = await store.get<boolean>("autoAnalyze");
       if (savedInterval) {
         setAutoCaptureInterval(savedInterval);
       }
+      if (savedAutoAnalyze !== undefined) {
+        setAutoAnalyze(savedAutoAnalyze);
+      }
     } catch (error) {
-      console.error("Failed to load auto capture interval:", error);
+      console.error("Failed to load auto capture settings:", error);
     }
   }
 
@@ -131,7 +137,7 @@ function App() {
     checkPermission();
     checkLocationPermission();
     checkApiKey();
-    loadAutoCaptureInterval();
+    loadAutoCaptureSettings();
   }, []);
 
   // 自動撮影のクリーンアップ
@@ -188,6 +194,21 @@ function App() {
 
       const assetUrl = `${convertFileSrc(savedPath)}?t=${Date.now()}`;
       setScreenshotSrc(assetUrl);
+
+      // 自動AI分析が有効かつAPIキーがある場合、分析を実行
+      if (autoAnalyze && hasApiKey) {
+        setIsAnalyzing(true);
+        setDebugInfo("AI分析中...");
+        setAnalysisResult(null);
+        const result = await runAIAnalysis(savedPath);
+        if (result) {
+          setAnalysisResult(result);
+          setDebugInfo("撮影・分析完了");
+        } else {
+          setDebugInfo("撮影完了（分析エラー）");
+        }
+        setIsAnalyzing(false);
+      }
     } catch (error) {
       setDebugInfo(`Error: ${error}`);
       console.error("Failed to take screenshot:", error);
@@ -195,6 +216,29 @@ function App() {
       setIsCapturing(false);
     }
   }
+
+  // 指定されたパスでAI分析を実行（UI更新なし、バックグラウンド用）
+  const runAIAnalysis = useCallback(
+    async (imagePath: string): Promise<string | null> => {
+      try {
+        const store = await load("settings.json");
+        const model = (await store.get<string>("model")) || DEFAULT_MODEL;
+        const prompt = (await store.get<string>("prompt")) || DEFAULT_PROMPT;
+
+        const result = await invoke<string>("analyze_screenshot", {
+          imagePath,
+          model,
+          prompt,
+        });
+
+        return result;
+      } catch (error) {
+        console.error("Failed to analyze screenshot:", error);
+        return null;
+      }
+    },
+    [],
+  );
 
   // 自動撮影用の内部関数（UIのisCapturingを更新しない）
   const takeScreenshotForAuto = useCallback(async () => {
@@ -232,7 +276,21 @@ function App() {
       const assetUrl = `${convertFileSrc(savedPath)}?t=${Date.now()}`;
       setScreenshotSrc(assetUrl);
 
-      setDebugInfo(`自動撮影: ${savedPath}`);
+      // 自動AI分析が有効かつAPIキーがある場合、バックグラウンドで分析を実行
+      if (autoAnalyze && hasApiKey) {
+        setDebugInfo(`自動撮影・分析中: ${savedPath}`);
+        // トレーアイコンを分析中表示に
+        await updateTrayTitle("🤖");
+        const result = await runAIAnalysis(savedPath);
+        if (result) {
+          setAnalysisResult(result);
+          setDebugInfo(`自動撮影・分析完了: ${savedPath}`);
+        } else {
+          setDebugInfo(`自動撮影完了（分析エラー）: ${savedPath}`);
+        }
+      } else {
+        setDebugInfo(`自動撮影: ${savedPath}`);
+      }
     } catch (error) {
       setDebugInfo(`自動撮影エラー: ${error}`);
       console.error("Auto capture failed:", error);
@@ -240,7 +298,7 @@ function App() {
       // 撮影完了フラグをリセット
       isCapturingRef.current = false;
     }
-  }, [updateTrayTitle]);
+  }, [updateTrayTitle, autoAnalyze, hasApiKey, runAIAnalysis]);
 
   // 自動撮影を開始
   async function startAutoCapture() {
@@ -334,19 +392,13 @@ function App() {
     setAnalysisResult(null);
 
     try {
-      // Storeから設定を読み込み
-      const store = await load("settings.json");
-      const model = (await store.get<string>("model")) || DEFAULT_MODEL;
-      const prompt = (await store.get<string>("prompt")) || DEFAULT_PROMPT;
-
-      const result = await invoke<string>("analyze_screenshot", {
-        imagePath: screenshotPath,
-        model,
-        prompt,
-      });
-
-      setAnalysisResult(result);
-      setDebugInfo("分析完了");
+      const result = await runAIAnalysis(screenshotPath);
+      if (result) {
+        setAnalysisResult(result);
+        setDebugInfo("分析完了");
+      } else {
+        setDebugInfo("AI分析エラー");
+      }
     } catch (error) {
       setDebugInfo(`AI分析エラー: ${error}`);
       console.error("Failed to analyze screenshot:", error);

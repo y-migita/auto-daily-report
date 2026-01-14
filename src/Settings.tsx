@@ -12,6 +12,7 @@ const DEFAULT_MODEL = "google/gemini-2.5-flash-lite";
 const DEFAULT_PROMPT =
   "このスクリーンショットから、今やっている作業を日本語で1〜3行で記録してください。固有名詞（アプリ名、ファイル名、URLなど）は可能な限り残してください。";
 const DEFAULT_AUTO_CAPTURE_INTERVAL = 60; // 秒
+const DEFAULT_AUTO_ANALYZE = false; // 自動AI分析
 
 // Vercel AI Gateway supported models (provider/model format)
 const AVAILABLE_MODELS = [
@@ -34,6 +35,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(DEFAULT_AUTO_CAPTURE_INTERVAL);
+  const [autoAnalyze, setAutoAnalyze] = useState(DEFAULT_AUTO_ANALYZE);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -118,10 +120,12 @@ function Settings({ onSettingsChange }: SettingsProps) {
       const savedModel = await store.get<string>("model");
       const savedPrompt = await store.get<string>("prompt");
       const savedInterval = await store.get<number>("autoCaptureInterval");
+      const savedAutoAnalyze = await store.get<boolean>("autoAnalyze");
 
       if (savedModel) setModel(savedModel);
       if (savedPrompt) setPrompt(savedPrompt);
       if (savedInterval) setAutoCaptureInterval(savedInterval);
+      if (savedAutoAnalyze !== undefined) setAutoAnalyze(savedAutoAnalyze);
     } catch (error) {
       console.error("Failed to load settings:", error);
     }
@@ -168,6 +172,7 @@ function Settings({ onSettingsChange }: SettingsProps) {
       await store.set("model", model);
       await store.set("prompt", prompt);
       await store.set("autoCaptureInterval", autoCaptureInterval);
+      await store.set("autoAnalyze", autoAnalyze);
       await store.save();
       setMessage({ type: "success", text: "設定を保存しました" });
       onSettingsChange?.();
@@ -423,6 +428,38 @@ function Settings({ onSettingsChange }: SettingsProps) {
             </div>
           </div>
 
+          {/* 自動AI分析設定 */}
+          <div className="p-3 border border-slate-200 rounded-sm bg-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-slate-700">
+                  自動AI分析
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  撮影後に自動でAI分析を実行し、JSONに保存します
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAutoAnalyze(!autoAnalyze)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  autoAnalyze ? "bg-slate-600" : "bg-slate-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    autoAnalyze ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+            {!hasApiKey && autoAnalyze && (
+              <p className="text-xs text-amber-600 mt-2">
+                APIキーが未設定です。AI分析を行うにはAPIキーを設定してください。
+              </p>
+            )}
+          </div>
+
           {/* 保存ボタン */}
           <button
             type="button"
@@ -463,4 +500,4 @@ function Settings({ onSettingsChange }: SettingsProps) {
 
 export default Settings;
 
-export { DEFAULT_MODEL, DEFAULT_PROMPT, DEFAULT_AUTO_CAPTURE_INTERVAL };
+export { DEFAULT_MODEL, DEFAULT_PROMPT, DEFAULT_AUTO_CAPTURE_INTERVAL, DEFAULT_AUTO_ANALYZE };
