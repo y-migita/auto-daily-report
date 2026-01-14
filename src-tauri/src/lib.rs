@@ -636,9 +636,11 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             // ウィンドウを閉じるときは非表示にするだけでアプリは終了しない
+            // 注意: prevent_close()を先に呼ぶことで、hide()が完了する前に
+            // アプリが終了することを防ぐ
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
                 api.prevent_close();
+                let _ = window.hide();
             }
         })
         .build(tauri::generate_context!())
