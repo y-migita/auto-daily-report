@@ -39,28 +39,10 @@ function App() {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [captureCount, setCaptureCount] = useState(0);
   const autoCaptureTimerRef = useRef<number | null>(null);
-  const countdownTimerRef = useRef<number | null>(null);
+  const uiUpdateTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
-  const nextCaptureTimeRef = useRef<Date | null>(null);
-  const isCapturingRef = useRef(false);
 
-  // トレーアイコン更新用関数
-  const updateTrayTitle = useCallback(async (title: string) => {
-    try {
-      await invoke("update_tray_title", { title });
-    } catch (error) {
-      console.error("Failed to update tray title:", error);
-    }
-  }, []);
-
-  const clearTrayTitle = useCallback(async () => {
-    try {
-      await invoke("clear_tray_title");
-    } catch (error) {
-      console.error("Failed to clear tray title:", error);
-    }
-  }, []);
-
+  // トレーアイコンツールチップ更新用関数
   const updateTrayTooltip = useCallback(async (tooltip: string) => {
     try {
       await invoke("update_tray_tooltip", { tooltip });
@@ -126,13 +108,13 @@ function App() {
       if (autoCaptureTimerRef.current) {
         clearInterval(autoCaptureTimerRef.current);
       }
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
+      if (uiUpdateTimerRef.current) {
+        clearInterval(uiUpdateTimerRef.current);
       }
-      // クリーンアップ時にトレーアイコンをリセット
-      clearTrayTitle();
+      // クリーンアップ時にRust側のタイマーを停止
+      invoke("stop_countdown_timer").catch(console.error);
     };
-  }, [clearTrayTitle]);
+  }, []);
 
   async function takeScreenshot() {
     setIsCapturing(true);
@@ -184,12 +166,9 @@ function App() {
 
   // 自動撮影用の内部関数（UIのisCapturingを更新しない）
   const takeScreenshotForAuto = useCallback(async () => {
-    // 撮影中フラグを設定（トレーアイコンの更新用）
-    isCapturingRef.current = true;
-
     try {
-      // 撮影中のステータスをトレーアイコンに表示
-      await updateTrayTitle("📷");
+      // Rust側に撮影中フラグを設定（トレーアイコンに📷を表示）
+      await invoke("set_capturing_flag", { isCapturing: true });
 
       const hasPermission = await checkScreenRecordingPermission();
       if (!hasPermission) {
@@ -223,10 +202,12 @@ function App() {
       setDebugInfo(`自動撮影エラー: ${error}`);
       console.error("Auto capture failed:", error);
     } finally {
-      // 撮影完了フラグをリセット
-      isCapturingRef.current = false;
+      // Rust側の撮影中フラグをリセット
+      await invoke("set_capturing_flag", { isCapturing: false });
+      // カウントダウンをリセット（次の撮影サイクル開始）
+      await invoke("reset_countdown");
     }
-  }, [updateTrayTitle]);
+  }, []);
 
   // 自動撮影を開始
   async function startAutoCapture() {
@@ -238,41 +219,28 @@ function App() {
     // ツールチップを更新
     await updateTrayTooltip(`自動撮影中（${autoCaptureInterval}秒間隔）`);
 
+    // Rust側のカウントダウンタイマーを開始
+    await invoke("start_countdown_timer", { intervalSeconds: autoCaptureInterval });
+
     // 最初の撮影を即実行
     takeScreenshotForAuto();
     setCaptureCount(1);
-
-    // 次回撮影時刻を設定
-    const nextTime = new Date(Date.now() + autoCaptureInterval * 1000);
-    nextCaptureTimeRef.current = nextTime;
     setRemainingSeconds(autoCaptureInterval);
 
     // 撮影タイマーを設定
     autoCaptureTimerRef.current = window.setInterval(() => {
-      const newNextTime = new Date(Date.now() + autoCaptureInterval * 1000);
-      nextCaptureTimeRef.current = newNextTime;
       takeScreenshotForAuto();
       setCaptureCount((prev) => prev + 1);
     }, autoCaptureInterval * 1000);
 
-    // カウントダウン更新用タイマー（1秒ごと）- トレーアイコンも同時更新
-    // 目標時刻から計算するため、setIntervalのドリフトに影響されない
-    countdownTimerRef.current = window.setInterval(() => {
-      // 停止フラグが立っている場合はトレーアイコンを更新しない
+    // UI更新用タイマー（Rust側から残り秒数を取得）
+    uiUpdateTimerRef.current = window.setInterval(async () => {
       if (isStoppingRef.current) return;
-
-      const targetTime = nextCaptureTimeRef.current;
-      if (!targetTime) return;
-
-      const remaining = Math.max(
-        0,
-        Math.ceil((targetTime.getTime() - Date.now()) / 1000),
-      );
-      setRemainingSeconds(remaining);
-
-      // 撮影中でなければ残り時間をトレーアイコンに表示
-      if (!isCapturingRef.current) {
-        updateTrayTitle(`${remaining}秒`);
+      try {
+        const remaining = await invoke<number>("get_remaining_seconds");
+        setRemainingSeconds(remaining);
+      } catch {
+        // エラーは無視
       }
     }, 1000);
 
@@ -289,17 +257,16 @@ function App() {
       clearInterval(autoCaptureTimerRef.current);
       autoCaptureTimerRef.current = null;
     }
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
+    if (uiUpdateTimerRef.current) {
+      clearInterval(uiUpdateTimerRef.current);
+      uiUpdateTimerRef.current = null;
     }
     setIsAutoCapturing(false);
-    nextCaptureTimeRef.current = null;
     setRemainingSeconds(0);
     setDebugInfo("自動撮影を停止しました");
 
-    // トレーアイコンをリセット
-    await clearTrayTitle();
+    // Rust側のカウントダウンタイマーを停止（トレーアイコンもクリアされる）
+    await invoke("stop_countdown_timer");
     await updateTrayTooltip("ぱしゃログ");
   }
 

@@ -1,7 +1,9 @@
 use std::fs::{self, File};
 use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
@@ -12,7 +14,7 @@ use keyring::{Entry, Error as KeyringError};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIcon, TrayIconBuilder},
-    Manager, State,
+    AppHandle, Manager, State,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
@@ -24,6 +26,18 @@ use objc2_core_wlan::CWWiFiClient;
 
 // トレーアイコンの状態管理
 struct TrayState(Mutex<Option<TrayIcon>>);
+
+// カウントダウンタイマーの状態管理
+struct CountdownState {
+    /// タイマーが動作中かどうか
+    running: AtomicBool,
+    /// インターバル（秒）
+    interval_seconds: AtomicU64,
+    /// 次回撮影までの残り秒数（UI表示用）
+    remaining_seconds: AtomicU64,
+    /// 撮影中フラグ（トレーアイコン更新を一時停止）
+    is_capturing: AtomicBool,
+}
 
 // Keychain constants
 const SERVICE: &str = "com.y-migita.pasha-log";
@@ -276,6 +290,133 @@ fn update_tray_tooltip(tooltip: String, tray_state: State<TrayState>) -> Result<
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+// ==================== Countdown Timer Commands ====================
+
+/// カウントダウンタイマーを開始（Rust側で1秒ごとにトレーアイコンを更新）
+#[tauri::command]
+fn start_countdown_timer(
+    interval_seconds: u64,
+    app_handle: AppHandle,
+    countdown_state: State<CountdownState>,
+) -> Result<(), String> {
+    // 既に動作中なら何もしない
+    if countdown_state.running.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    // 状態を更新
+    countdown_state.running.store(true, Ordering::SeqCst);
+    countdown_state.interval_seconds.store(interval_seconds, Ordering::SeqCst);
+    countdown_state.remaining_seconds.store(interval_seconds, Ordering::SeqCst);
+    countdown_state.is_capturing.store(false, Ordering::SeqCst);
+
+    // バックグラウンドタスクでカウントダウンを管理
+    let app_handle_clone = app_handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let countdown_state = app_handle_clone.state::<CountdownState>();
+        let tray_state = app_handle_clone.state::<TrayState>();
+
+        // 高精度タイマー: 次回更新時刻を基準に計算
+        let mut next_tick = Instant::now() + Duration::from_secs(1);
+
+        loop {
+            // 停止フラグをチェック
+            if !countdown_state.running.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // 次のtickまで待機
+            let now = Instant::now();
+            if now < next_tick {
+                tokio::time::sleep(next_tick - now).await;
+            }
+            next_tick += Duration::from_secs(1);
+
+            // 停止フラグを再チェック（sleep後）
+            if !countdown_state.running.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // 残り秒数を更新
+            let remaining = countdown_state.remaining_seconds.load(Ordering::SeqCst);
+            let new_remaining = if remaining > 0 { remaining - 1 } else { 0 };
+            countdown_state.remaining_seconds.store(new_remaining, Ordering::SeqCst);
+
+            // 撮影中でなければトレーアイコンを更新
+            if !countdown_state.is_capturing.load(Ordering::SeqCst) {
+                if let Ok(tray_guard) = tray_state.0.lock() {
+                    if let Some(tray) = tray_guard.as_ref() {
+                        let _ = tray.set_title(Some(&format!("{}秒", new_remaining)));
+                    }
+                }
+            }
+
+            // 0になったらインターバルにリセット
+            if new_remaining == 0 {
+                let interval = countdown_state.interval_seconds.load(Ordering::SeqCst);
+                countdown_state.remaining_seconds.store(interval, Ordering::SeqCst);
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// カウントダウンタイマーを停止
+#[tauri::command]
+fn stop_countdown_timer(
+    countdown_state: State<CountdownState>,
+    tray_state: State<TrayState>,
+) -> Result<(), String> {
+    // 停止フラグを立てる
+    countdown_state.running.store(false, Ordering::SeqCst);
+    countdown_state.remaining_seconds.store(0, Ordering::SeqCst);
+
+    // トレーアイコンのタイトルをクリア
+    if let Ok(tray_guard) = tray_state.0.lock() {
+        if let Some(tray) = tray_guard.as_ref() {
+            let _ = tray.set_title(None::<&str>);
+        }
+    }
+
+    Ok(())
+}
+
+/// カウントダウンをリセット（次の撮影サイクル開始時に呼ぶ）
+#[tauri::command]
+fn reset_countdown(countdown_state: State<CountdownState>) -> Result<(), String> {
+    let interval = countdown_state.interval_seconds.load(Ordering::SeqCst);
+    countdown_state.remaining_seconds.store(interval, Ordering::SeqCst);
+    Ok(())
+}
+
+/// 撮影中フラグを設定（トレーアイコン更新を一時停止）
+#[tauri::command]
+fn set_capturing_flag(
+    is_capturing: bool,
+    countdown_state: State<CountdownState>,
+    tray_state: State<TrayState>,
+) -> Result<(), String> {
+    countdown_state.is_capturing.store(is_capturing, Ordering::SeqCst);
+
+    // 撮影開始時はカメラアイコンを表示
+    if is_capturing {
+        if let Ok(tray_guard) = tray_state.0.lock() {
+            if let Some(tray) = tray_guard.as_ref() {
+                let _ = tray.set_title(Some("📷"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// 現在の残り秒数を取得
+#[tauri::command]
+fn get_remaining_seconds(countdown_state: State<CountdownState>) -> u64 {
+    countdown_state.remaining_seconds.load(Ordering::SeqCst)
 }
 
 // ==================== Context Info (WiFi/Location) ====================
@@ -557,9 +698,20 @@ pub fn run() {
             analyze_screenshot,
             update_tray_title,
             clear_tray_title,
-            update_tray_tooltip
+            update_tray_tooltip,
+            start_countdown_timer,
+            stop_countdown_timer,
+            reset_countdown,
+            set_capturing_flag,
+            get_remaining_seconds
         ])
         .manage(TrayState(Mutex::new(None)))
+        .manage(CountdownState {
+            running: AtomicBool::new(false),
+            interval_seconds: AtomicU64::new(60),
+            remaining_seconds: AtomicU64::new(0),
+            is_capturing: AtomicBool::new(false),
+        })
         .setup(|app| {
             // macOSでDockアイコンを非表示にしてメニューバーのみに表示
             #[cfg(target_os = "macos")]
