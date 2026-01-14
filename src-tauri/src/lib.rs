@@ -126,12 +126,11 @@ fn validate_pictures_path(image_path: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-/// スクリーンショット画像をリサイズ・JPEG圧縮してPicturesフォルダに保存
-/// source_path: screenshotsプラグインから取得した一時画像ファイルのパス
-#[tauri::command]
-fn process_screenshot(source_path: &str) -> Result<String, String> {
+/// スクリーンショット画像をリサイズ・JPEG圧縮してPicturesフォルダに保存（同期処理部分）
+/// 重い画像処理を含むため、spawn_blockingで呼び出すこと
+fn process_screenshot_blocking(source_path: String) -> Result<String, String> {
     // パスのバリデーション
-    let validated_source = validate_temp_path(source_path)?;
+    let validated_source = validate_temp_path(&source_path)?;
 
     // Picturesフォルダのパスを取得
     let pictures_dir = dirs::picture_dir().ok_or("Picturesフォルダが見つかりません")?;
@@ -200,6 +199,17 @@ fn process_screenshot(source_path: &str) -> Result<String, String> {
         .to_str()
         .map(|s| s.to_string())
         .ok_or("パスの変換に失敗しました".to_string())
+}
+
+/// スクリーンショット画像をリサイズ・JPEG圧縮してPicturesフォルダに保存
+/// source_path: screenshotsプラグインから取得した一時画像ファイルのパス
+/// 非同期でバックグラウンドスレッドで実行し、UIスレッドをブロックしない
+#[tauri::command]
+async fn process_screenshot(source_path: String) -> Result<String, String> {
+    // 重い画像処理をバックグラウンドスレッドで実行
+    tauri::async_runtime::spawn_blocking(move || process_screenshot_blocking(source_path))
+        .await
+        .map_err(|e| format!("タスク実行エラー: {}", e))?
 }
 
 // ==================== Keychain Commands ====================
