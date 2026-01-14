@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Read as IoRead};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::Local;
@@ -10,7 +10,6 @@ use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::GenericImageView;
 use keyring::{Entry, Error as KeyringError};
-use once_cell::sync::Lazy;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -31,7 +30,8 @@ const TRAY_ID: &str = "main-tray";
 static TRAY_TITLE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 // トレータイトル操作用のMutex（シーケンスチェックとset_titleをアトミックに）
-static TRAY_TITLE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+// Rust 1.80以降で安定化されたstd::sync::LazyLockを使用
+static TRAY_TITLE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 // Keychain constants
 const SERVICE: &str = "com.y-migita.pasha-log";
