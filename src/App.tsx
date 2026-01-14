@@ -44,25 +44,32 @@ function App() {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [captureCount, setCaptureCount] = useState(0);
   const autoCaptureTimerRef = useRef<number | null>(null);
-  const countdownTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
   const nextCaptureTimeRef = useRef<Date | null>(null);
   const isCapturingRef = useRef(false);
   // 最新のtakeScreenshotForAuto関数への参照を保持（setInterval内で使用）
   const takeScreenshotForAutoRef = useRef<(() => Promise<void>) | null>(null);
+  // トレータイトル更新用シーケンス番号（レースコンディション対策）
+  const traySeqRef = useRef<number>(0);
+  // カウントダウン用Web Worker（バックグラウンドでもスロットリングされない）
+  const timerWorkerRef = useRef<Worker | null>(null);
 
   // トレーアイコン更新用関数
+  // シーケンス番号を渡すことで、古い更新リクエストがRust側で無視される
   const updateTrayTitle = useCallback(async (title: string) => {
     try {
-      await invoke("update_tray_title", { title });
+      const seq = traySeqRef.current;
+      await invoke("update_tray_title", { title, seq });
     } catch (error) {
       console.error("Failed to update tray title:", error);
     }
   }, []);
 
+  // クリア時にシーケンス番号をインクリメントし、古い更新を無効化
   const clearTrayTitle = useCallback(async () => {
     try {
-      await invoke("clear_tray_title");
+      const newSeq = await invoke<number>("clear_tray_title");
+      traySeqRef.current = newSeq;
     } catch (error) {
       console.error("Failed to clear tray title:", error);
     }
@@ -148,8 +155,8 @@ function App() {
       if (autoCaptureTimerRef.current) {
         clearInterval(autoCaptureTimerRef.current);
       }
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
+      if (timerWorkerRef.current) {
+        timerWorkerRef.current.terminate();
       }
       // クリーンアップ時にトレーアイコンをリセット
       clearTrayTitle();
@@ -335,31 +342,44 @@ function App() {
     autoCaptureTimerRef.current = window.setInterval(() => {
       const newNextTime = new Date(Date.now() + autoCaptureInterval * 1000);
       nextCaptureTimeRef.current = newNextTime;
+      // Web Workerに新しい目標時刻を通知
+      timerWorkerRef.current?.postMessage({
+        type: "updateTarget",
+        data: { targetTime: newNextTime.getTime() },
+      });
       takeScreenshotForAutoRef.current?.();
       setCaptureCount((prev) => prev + 1);
     }, autoCaptureInterval * 1000);
 
-    // カウントダウン更新用タイマー（1秒ごと）- トレーアイコンも同時更新
-    // 目標時刻から計算するため、setIntervalのドリフトに影響されない
-    countdownTimerRef.current = window.setInterval(() => {
-      // 停止フラグが立っている場合はトレーアイコンを更新しない
-      if (isStoppingRef.current) return;
+    // Web Workerを作成してカウントダウンを開始
+    // Web Workerはバックグラウンドでもスロットリングされない
+    const worker = new Worker(
+      new URL("./timerWorker.ts", import.meta.url),
+      { type: "module" }
+    );
+    timerWorkerRef.current = worker;
 
-      const targetTime = nextCaptureTimeRef.current;
-      if (!targetTime) return;
+    // Web Workerからのメッセージを処理
+    worker.onmessage = (e) => {
+      const { type, remaining } = e.data;
+      if (type === "tick") {
+        // 停止フラグが立っている場合は更新しない
+        if (isStoppingRef.current) return;
 
-      const remaining = Math.max(
-        0,
-        Math.ceil((targetTime.getTime() - Date.now()) / 1000),
-      );
-      setRemainingSeconds(remaining);
+        setRemainingSeconds(remaining);
 
-      // 撮影中でなければ残り時間をトレーアイコンに表示
-      // updateTrayTitle呼び出し直前に再度停止フラグをチェック（レースコンディション対策）
-      if (!isCapturingRef.current && !isStoppingRef.current) {
-        updateTrayTitle(`${remaining}秒`);
+        // 撮影中でなければ残り時間をトレーアイコンに表示
+        if (!isCapturingRef.current && !isStoppingRef.current) {
+          updateTrayTitle(`${remaining}秒`);
+        }
       }
-    }, 1000);
+    };
+
+    // Web Workerにカウントダウン開始を指示
+    worker.postMessage({
+      type: "start",
+      data: { targetTime: nextTime.getTime() },
+    });
 
     setIsAutoCapturing(true);
     setDebugInfo(`自動撮影を開始しました（${autoCaptureInterval}秒間隔）`);
@@ -374,23 +394,20 @@ function App() {
       clearInterval(autoCaptureTimerRef.current);
       autoCaptureTimerRef.current = null;
     }
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
+    // Web Workerを停止・終了
+    if (timerWorkerRef.current) {
+      timerWorkerRef.current.postMessage({ type: "stop" });
+      timerWorkerRef.current.terminate();
+      timerWorkerRef.current = null;
     }
     setIsAutoCapturing(false);
     nextCaptureTimeRef.current = null;
     setRemainingSeconds(0);
     setDebugInfo("自動撮影を停止しました");
 
-    // トレーアイコンを即座にクリア
+    // トレーアイコンをクリア（シーケンス番号により古い更新は無視される）
     await clearTrayTitle();
     await updateTrayTooltip("ぱしゃログ");
-
-    // 進行中のupdateTrayTitleの非同期処理が完了するのを待ってから再度クリア
-    // （レースコンディションで上書きされた場合の対策）
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    await clearTrayTitle();
   }
 
   async function analyzeWithAI() {
